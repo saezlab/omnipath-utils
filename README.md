@@ -1,61 +1,59 @@
-![project-banner](./docs/assets/project-banner-readme.png)
+# omnipath-utils
 
-# OmniPath Utils
+ID translation, taxonomy, and reference lists for molecular biology.
 
-- [ ] TODO: Add badges to your project.
+[![Tests](https://github.com/saezlab/omnipath-utils/actions/workflows/ci-testing-unit.yml/badge.svg)](https://github.com/saezlab/omnipath-utils/actions)
 
-[![Tests](https://img.shields.io/github/actions/workflow/status/saezlab/omnipath-utils/ci-testing-unit.yml?branch=master&label=tests)](https://github.com/saezlab/omnipath-utils/actions/workflows/ci-testing-unit.yml)
-[![Codecov](https://img.shields.io/codecov/c/github/saezlab/omnipath-utils)](https://codecov.io/gh/saezlab/omnipath-utils)
-[![Docs](https://img.shields.io/badge/docs-MkDocs-blue)](https://saezlab.github.io/omnipath-utils/)
-![Pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)
-![PyPI](https://img.shields.io/pypi/v/omnipath-utils)
-![Python](https://img.shields.io/pypi/pyversions/omnipath-utils)
-![License](https://img.shields.io/github/license/saezlab/omnipath-utils)
-![Issues](https://img.shields.io/github/issues/saezlab/omnipath-utils)
-![Last Commit](https://img.shields.io/github/last-commit/saezlab/omnipath-utils)
+## Quick Start
 
-## Description
+```python
+from omnipath_utils.mapping import map_name, map_names
+from omnipath_utils.taxonomy import ensure_ncbi_tax_id
+from omnipath_utils.reflists import is_swissprot
 
-ID translation, taxonomy, orthology and reference lists for molecular biology
+# Translate gene symbol to UniProt
+map_name('TP53', 'genesymbol', 'uniprot')
+# {'P04637', ...}
+
+# Translate multiple
+map_names(['TP53', 'EGFR'], 'genesymbol', 'uniprot')
+# {'P04637', 'P00533', ...}
+
+# Resolve organism
+ensure_ncbi_tax_id('human')   # 9606
+ensure_ncbi_tax_id('hsapiens') # 9606
+
+# Check if reviewed
+is_swissprot('P04637')  # True
+```
 
 ## Installation
 
-- [ ] TODO: Add installation instructions for your project, if applicable.
+```bash
+pip install omnipath-utils
+```
+
+With database and web service:
 
 ```bash
-# Example
-pip install <name-of-my-project>
+pip install "omnipath-utils[server]"
 ```
 
-## Usage
+## Web Service
 
-- [ ] TODO: Add usage instructions for your project.
-
-```python
-import foobar
-
-# returns 'words'
-foobar.pluralize('word')
-
-# returns 'geese'
-foobar.pluralize('goose')
-
-# returns 'phenomenon'
-foobar.singularize('phenomena')
+```bash
+omnipath-utils build --organisms 9606
+omnipath-utils serve --port 8082
 ```
 
-## Contributing
+```bash
+curl "http://localhost:8082/mapping/translate?identifiers=TP53,EGFR&id_type=genesymbol&target_id_type=uniprot"
+```
 
-Pull requests are welcome. For major changes, please open an issue first
-to discuss what you would like to change.
+## Documentation
 
-Please make sure to update tests as appropriate.
-
-- [ ] TODO: add contribution guidelines. All of them can be modified in the mkdocs documentation (./docs/community)
+https://saezlab.github.io/omnipath-utils
 
 ## License
 
-[MIT](https://choosealicense.com/licenses/mit/)
-
-- [ ] TODO: Modify this based on the license you choose.
-- [ ] TODO: Modify the LICENSE file based on the license you choose.
+GPL-3.0-or-later
