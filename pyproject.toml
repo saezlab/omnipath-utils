@@ -77,6 +77,9 @@ tests = [
     "ruff",
 ]
 
+[project.scripts]
+omnipath-utils = "omnipath_utils.cli._main:main"
+
 [project.urls]
 Documentation = "https://saezlab.github.io/omnipath-utils"
 Homepage = "https://github.com/saezlab/omnipath-utils"
