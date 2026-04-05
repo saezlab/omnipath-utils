@@ -249,6 +249,12 @@ class Mapper:
 
         return None
 
+    # Map from backend registry name to id_types.yaml backend key
+    _BACKEND_YAML_KEYS: dict[str, str] = {
+        'uniprot': 'uniprot',
+        'biomart': 'ensembl',
+    }
+
     def _find_backends(
         self,
         id_type: str,
@@ -258,12 +264,12 @@ class Mapper:
 
         backends = []
 
-        for backend_name in ('uniprot',):
+        for backend_name, yaml_key in self._BACKEND_YAML_KEYS.items():
             src_col = self._id_types.backend_column(
-                id_type, backend_name,
+                id_type, yaml_key,
             )
             tgt_col = self._id_types.backend_column(
-                target_id_type, backend_name,
+                target_id_type, yaml_key,
             )
 
             if src_col and tgt_col:
