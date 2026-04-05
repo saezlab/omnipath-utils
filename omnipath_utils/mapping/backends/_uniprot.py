@@ -1,12 +1,14 @@
-"""UniProt REST API mapping backend."""
+"""UniProt REST API mapping backend.
+
+Prefers pypath.inputs.uniprot when available; falls back to direct
+HTTP requests against the UniProt REST API.
+"""
 
 from __future__ import annotations
 
 import re
 import logging
 from collections import defaultdict
-
-import requests
 
 from omnipath_utils.mapping.backends import register
 from omnipath_utils.mapping.backends._base import MappingBackend
@@ -22,11 +24,11 @@ _RE_MULTI_SEP = re.compile(r';\s*')
 
 
 class UniProtBackend(MappingBackend):
-    """Fetch ID mappings from the UniProt REST API.
+    """Fetch ID mappings from UniProt.
 
-    Uses the /uniprotkb/stream endpoint which returns all results
-    without pagination.  The response is a TSV with a header line,
-    where the first column is always "accession" (the UniProt AC).
+    Uses pypath.inputs.uniprot (UniprotQuery) when pypath is available.
+    Falls back to direct HTTP against the /uniprotkb/stream endpoint
+    when pypath is not installed.
     """
 
     def read(
@@ -37,6 +39,125 @@ class UniProtBackend(MappingBackend):
         **kwargs: object,
     ) -> dict[str, set[str]]:
         """Query UniProt and build a source -> target mapping dict."""
+
+        try:
+            return self._read_via_pypath(
+                id_type, target_id_type, ncbi_tax_id, **kwargs,
+            )
+        except ImportError:
+            _log.debug(
+                'pypath not available, falling back to direct HTTP '
+                'for UniProt backend',
+            )
+            return self._read_direct(
+                id_type, target_id_type, ncbi_tax_id, **kwargs,
+            )
+
+    # ------------------------------------------------------------------
+    # pypath.inputs path
+    # ------------------------------------------------------------------
+
+    def _read_via_pypath(
+        self,
+        id_type: str,
+        target_id_type: str,
+        ncbi_tax_id: int,
+        **kwargs: object,
+    ) -> dict[str, set[str]]:
+        """Read mapping data via pypath.inputs.uniprot.UniprotQuery."""
+
+        from pypath.inputs.uniprot import UniprotQuery
+
+        from pkg_infra.utils import to_set, swap_dict
+
+        reg = IdTypeRegistry.get()
+
+        src_field = reg.backend_column(id_type, 'uniprot')
+        tgt_field = reg.backend_column(target_id_type, 'uniprot')
+
+        if not src_field or not tgt_field:
+            _log.debug(
+                'UniProt backend does not support %s -> %s',
+                id_type,
+                target_id_type,
+            )
+            return {}
+
+        # UniprotQuery.perform() returns {accession: value} when exactly
+        # one field is requested.  We need to figure out which side is
+        # the accession (the dict key) and which is the queried field.
+
+        if src_field == 'accession' and tgt_field == 'accession':
+            # Identity: both sides are uniprot AC — nothing to query
+            _log.debug('UniProt backend: both sides are accession')
+            return {}
+
+        if src_field == 'accession':
+            field = tgt_field
+            swap = False
+        elif tgt_field == 'accession':
+            field = src_field
+            swap = True
+        else:
+            # Neither side is accession — need two fields in the TSV.
+            # UniprotQuery supports this via its __iter__ but perform()
+            # returns a nested dict.  Fall back to direct HTTP which
+            # already handles arbitrary pairs.
+            _log.debug(
+                'UniProt/pypath: neither side is accession for '
+                '%s -> %s, falling back to direct HTTP',
+                id_type,
+                target_id_type,
+            )
+            return self._read_direct(
+                id_type, target_id_type, ncbi_tax_id, **kwargs,
+            )
+
+        # Determine reviewed filter from id_type semantics
+        swissprot_only = id_type == 'swissprot' or target_id_type == 'swissprot'
+        trembl_only = id_type == 'trembl' or target_id_type == 'trembl'
+        reviewed = True if swissprot_only else (False if trembl_only else None)
+
+        _log.info(
+            'UniProt query (pypath): field=%s, organism=%d, reviewed=%s',
+            field,
+            ncbi_tax_id,
+            reviewed,
+        )
+
+        query = UniprotQuery(
+            reviewed=reviewed,
+            organism=ncbi_tax_id,
+            fields=field,
+        )
+        query.name_process = True
+        raw_data = query.perform()
+
+        if not raw_data:
+            return {}
+
+        # raw_data is {accession: value} where value can be str or list
+        data = {k: to_set(v) for k, v in raw_data.items()}
+
+        if swap:
+            return swap_dict(data, force_sets=True)
+
+        return data
+
+    # ------------------------------------------------------------------
+    # Direct HTTP fallback
+    # ------------------------------------------------------------------
+
+    def _read_direct(
+        self,
+        id_type: str,
+        target_id_type: str,
+        ncbi_tax_id: int,
+        **kwargs: object,
+    ) -> dict[str, set[str]]:
+        """Query UniProt REST API directly (no pypath dependency)."""
+
+        import requests
 
         reg = IdTypeRegistry.get()
 
@@ -57,7 +178,8 @@ class UniProtBackend(MappingBackend):
         fields_str = ','.join(field_set)
 
         _log.info(
-            'Querying UniProt: %s -> %s (organism %d, fields: %s)',
+            'Querying UniProt (direct HTTP): %s -> %s '
+            '(organism %d, fields: %s)',
             id_type,
             target_id_type,
             ncbi_tax_id,
@@ -89,7 +211,6 @@ class UniProtBackend(MappingBackend):
 
         # Parse header to find column indices
         header = lines[0].split('\t')
-        header_lower = [h.strip().lower() for h in header]
 
         # Map our requested fields to column indices.
         # UniProt returns column headers that are human-readable labels,
