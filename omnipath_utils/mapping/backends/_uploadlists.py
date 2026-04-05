@@ -1,4 +1,10 @@
-"""UniProt ID Mapping (uploadlists) backend."""
+"""UniProt ID Mapping (uploadlists) backend.
+
+This backend uses the UniProt ID Mapping batch service for targeted
+translations of specific source IDs. It does not use the standard
+pypath/direct dispatch because its workflow is fundamentally different
+(submit job, poll, collect).
+"""
 
 from __future__ import annotations
 
@@ -24,10 +30,18 @@ MAX_POLL = 60  # Max poll attempts
 
 
 class UploadListsBackend(MappingBackend):
-    """UniProt ID Mapping batch service for targeted translations."""
+    """UniProt ID Mapping batch service for targeted translations.
+
+    Overrides ``read()`` because this backend has its own column
+    resolution logic (``uniprot_from``/``uniprot_to`` keys) and
+    requires ``source_ids`` rather than downloading a full table.
+    """
+
+    name = 'uploadlists'
+    yaml_key = 'uploadlists'
 
     def read(self, id_type, target_id_type, ncbi_tax_id, **kwargs):
-        """For targeted mode: translate specific source IDs."""
+        """Translate specific source IDs via the UniProt batch service."""
 
         reg = IdTypeRegistry.get()
 
@@ -57,7 +71,35 @@ class UploadListsBackend(MappingBackend):
             )
             return {}
 
-        return self._translate_batch(source_ids, from_db, to_db)
+        _log.info(
+            "%s: translating %d IDs (%s -> %s)",
+            self.name,
+            len(source_ids),
+            id_type,
+            target_id_type,
+        )
+
+        data = self._translate_batch(source_ids, from_db, to_db)
+
+        _log.info(
+            "%s: loaded %d entries for %s -> %s",
+            self.name,
+            len(data),
+            id_type,
+            target_id_type,
+        )
+
+        return data
+
+    def _read_via_pypath(self, id_type, target_id_type, ncbi_tax_id,
+                         *, src_col, tgt_col, **kwargs):
+        """Not used -- read() is overridden."""
+        raise NotImplementedError  # pragma: no cover
+
+    def _read_direct(self, id_type, target_id_type, ncbi_tax_id,
+                     *, src_col, tgt_col, **kwargs):
+        """Not used -- read() is overridden."""
+        raise NotImplementedError  # pragma: no cover
 
     def _translate_batch(
         self,

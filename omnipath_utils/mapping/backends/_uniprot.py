@@ -12,14 +12,12 @@ from collections import defaultdict
 
 from omnipath_utils.mapping.backends import register
 from omnipath_utils.mapping.backends._base import MappingBackend
-from omnipath_utils.mapping._id_types import IdTypeRegistry
 
 _log = logging.getLogger(__name__)
 
 UNIPROT_STREAM = 'https://rest.uniprot.org/uniprotkb/stream'
 
-# Pattern for stripping qualifiers UniProt sometimes puts in parentheses
-# e.g. "BRCA1 (Fragment)" -> we keep the full value as-is for now
+# Pattern for splitting multi-value UniProt fields (e.g. "SYN1; SYN2")
 _RE_MULTI_SEP = re.compile(r';\s*')
 
 
@@ -31,27 +29,8 @@ class UniProtBackend(MappingBackend):
     when pypath is not installed.
     """
 
-    def read(
-        self,
-        id_type: str,
-        target_id_type: str,
-        ncbi_tax_id: int,
-        **kwargs: object,
-    ) -> dict[str, set[str]]:
-        """Query UniProt and build a source -> target mapping dict."""
-
-        try:
-            return self._read_via_pypath(
-                id_type, target_id_type, ncbi_tax_id, **kwargs,
-            )
-        except ImportError:
-            _log.debug(
-                'pypath not available, falling back to direct HTTP '
-                'for UniProt backend',
-            )
-            return self._read_direct(
-                id_type, target_id_type, ncbi_tax_id, **kwargs,
-            )
+    name = 'uniprot'
+    yaml_key = 'uniprot'
 
     # ------------------------------------------------------------------
     # pypath.inputs path
@@ -62,6 +41,9 @@ class UniProtBackend(MappingBackend):
         id_type: str,
         target_id_type: str,
         ncbi_tax_id: int,
+        *,
+        src_col: str,
+        tgt_col: str,
         **kwargs: object,
     ) -> dict[str, set[str]]:
         """Read mapping data via pypath.inputs.uniprot.UniprotQuery."""
@@ -70,36 +52,23 @@ class UniProtBackend(MappingBackend):
 
         from pkg_infra.utils import to_set, swap_dict
 
-        reg = IdTypeRegistry.get()
-
-        src_field = reg.backend_column(id_type, 'uniprot')
-        tgt_field = reg.backend_column(target_id_type, 'uniprot')
-
-        if not src_field or not tgt_field:
-            _log.debug(
-                'UniProt backend does not support %s -> %s',
-                id_type,
-                target_id_type,
-            )
-            return {}
-
         # UniprotQuery.perform() returns {accession: value} when exactly
         # one field is requested.  We need to figure out which side is
         # the accession (the dict key) and which is the queried field.
 
-        if src_field == 'accession' and tgt_field == 'accession':
-            # Identity: both sides are uniprot AC — nothing to query
+        if src_col == 'accession' and tgt_col == 'accession':
+            # Identity: both sides are uniprot AC -- nothing to query
             _log.debug('UniProt backend: both sides are accession')
             return {}
 
-        if src_field == 'accession':
-            field = tgt_field
+        if src_col == 'accession':
+            field = tgt_col
             swap = False
-        elif tgt_field == 'accession':
-            field = src_field
+        elif tgt_col == 'accession':
+            field = src_col
             swap = True
         else:
-            # Neither side is accession — need two fields in the TSV.
+            # Neither side is accession -- need two fields in the TSV.
             # UniprotQuery supports this via its __iter__ but perform()
             # returns a nested dict.  Fall back to direct HTTP which
             # already handles arbitrary pairs.
@@ -110,13 +79,16 @@ class UniProtBackend(MappingBackend):
                 target_id_type,
             )
             return self._read_direct(
-                id_type, target_id_type, ncbi_tax_id, **kwargs,
+                id_type,
+                target_id_type,
+                ncbi_tax_id,
+                src_col=src_col,
+                tgt_col=tgt_col,
+                **kwargs,
             )
 
         # Determine reviewed filter from id_type semantics
-        swissprot_only = id_type == 'swissprot' or target_id_type == 'swissprot'
-        trembl_only = id_type == 'trembl' or target_id_type == 'trembl'
-        reviewed = True if swissprot_only else (False if trembl_only else None)
+        reviewed = self._reviewed_filter(id_type, target_id_type)
 
         _log.info(
             'UniProt query (pypath): field=%s, organism=%d, reviewed=%s',
@@ -153,28 +125,18 @@ class UniProtBackend(MappingBackend):
         id_type: str,
         target_id_type: str,
         ncbi_tax_id: int,
+        *,
+        src_col: str,
+        tgt_col: str,
         **kwargs: object,
     ) -> dict[str, set[str]]:
         """Query UniProt REST API directly (no pypath dependency)."""
 
         import requests
 
-        reg = IdTypeRegistry.get()
-
-        src_field = reg.backend_column(id_type, 'uniprot')
-        tgt_field = reg.backend_column(target_id_type, 'uniprot')
-
-        if not src_field or not tgt_field:
-            _log.debug(
-                'UniProt backend does not support %s -> %s',
-                id_type,
-                target_id_type,
-            )
-            return {}
-
         # Build the fields list; accession is always included by UniProt
         # but we request only the specific fields we need.
-        field_set = sorted({src_field, tgt_field})
+        field_set = sorted({src_col, tgt_col})
         fields_str = ','.join(field_set)
 
         _log.info(
@@ -226,9 +188,9 @@ class UniProtBackend(MappingBackend):
         else:
             # Fields appear in the order we requested (alphabetical).
             for i, requested_field in enumerate(field_set):
-                if requested_field == src_field:
+                if requested_field == src_col:
                     src_idx = i
-                if requested_field == tgt_field:
+                if requested_field == tgt_col:
                     tgt_idx = i
 
         if src_idx is None or tgt_idx is None:
@@ -239,8 +201,6 @@ class UniProtBackend(MappingBackend):
                 field_set,
             )
             return {}
-
-        n_entries = 0
 
         for line in lines[1:]:
             line = line.strip()
@@ -276,19 +236,27 @@ class UniProtBackend(MappingBackend):
 
                     if tgt:
                         data[src].add(tgt)
-                        n_entries += 1
-
-        _log.info(
-            'UniProt: loaded %d source IDs, %d total pairs '
-            'for %s -> %s (organism %d)',
-            len(data),
-            n_entries,
-            id_type,
-            target_id_type,
-            ncbi_tax_id,
-        )
 
         return dict(data)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _reviewed_filter(
+        id_type: str,
+        target_id_type: str,
+    ) -> bool | None:
+        """Determine the reviewed filter for UniProt queries."""
+
+        if 'swissprot' in (id_type, target_id_type):
+            return True
+
+        if 'trembl' in (id_type, target_id_type):
+            return False
+
+        return None
 
 
 register('uniprot', UniProtBackend)

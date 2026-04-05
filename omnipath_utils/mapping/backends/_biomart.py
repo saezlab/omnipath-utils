@@ -12,7 +12,6 @@ from collections import defaultdict
 
 from omnipath_utils.mapping.backends import register
 from omnipath_utils.mapping.backends._base import MappingBackend
-from omnipath_utils.mapping._id_types import IdTypeRegistry
 from omnipath_utils.taxonomy import ensure_ensembl_name
 
 _log = logging.getLogger(__name__)
@@ -39,55 +38,52 @@ class BioMartBackend(MappingBackend):
     when pypath is not installed.
     """
 
-    def read(self, id_type, target_id_type, ncbi_tax_id, **kwargs):
-        try:
-            return self._read_via_pypath(
-                id_type, target_id_type, ncbi_tax_id, **kwargs,
-            )
-        except ImportError:
-            _log.debug(
-                'pypath not available, falling back to direct HTTP '
-                'for BioMart backend',
-            )
-            return self._read_direct(
-                id_type, target_id_type, ncbi_tax_id, **kwargs,
-            )
+    name = 'biomart'
+    yaml_key = 'ensembl'
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _dataset(ncbi_tax_id: int) -> str | None:
+        """Build the BioMart dataset name for an organism."""
+
+        ensembl_name = ensure_ensembl_name(ncbi_tax_id)
+
+        if not ensembl_name:
+            _log.warning("No Ensembl name for organism %d", ncbi_tax_id)
+            return None
+
+        return f"{ensembl_name}_gene_ensembl"
 
     # ------------------------------------------------------------------
     # pypath.inputs path
     # ------------------------------------------------------------------
 
     def _read_via_pypath(
-        self, id_type, target_id_type, ncbi_tax_id, **kwargs,
-    ):
+        self,
+        id_type: str,
+        target_id_type: str,
+        ncbi_tax_id: int,
+        *,
+        src_col: str,
+        tgt_col: str,
+        **kwargs: object,
+    ) -> dict[str, set[str]]:
         """Read mapping data via pypath.inputs.biomart.biomart_query."""
 
         from pypath.inputs.biomart import biomart_query
 
-        reg = IdTypeRegistry.get()
+        dataset = self._dataset(ncbi_tax_id)
 
-        src_attr = reg.backend_column(id_type, "ensembl")
-        tgt_attr = reg.backend_column(target_id_type, "ensembl")
-
-        if not src_attr or not tgt_attr:
-            _log.debug(
-                "BioMart does not support %s -> %s",
-                id_type,
-                target_id_type,
-            )
+        if not dataset:
             return {}
 
-        ensembl_name = ensure_ensembl_name(ncbi_tax_id)
-
-        if not ensembl_name:
-            _log.warning("No Ensembl name for organism %d", ncbi_tax_id)
-            return {}
-
-        dataset = f"{ensembl_name}_gene_ensembl"
         attrs = (
-            [src_attr, tgt_attr]
-            if src_attr != tgt_attr
-            else [src_attr]
+            [src_col, tgt_col]
+            if src_col != tgt_col
+            else [src_col]
         )
 
         _log.info(
@@ -96,60 +92,44 @@ class BioMartBackend(MappingBackend):
             dataset,
         )
 
-        a_to_b: dict[str, set[str]] = defaultdict(set)
+        data: dict[str, set[str]] = defaultdict(set)
 
         for rec in biomart_query(attrs=attrs, dataset=dataset):
-            id_a = getattr(rec, src_attr, '')
-            id_b = getattr(rec, tgt_attr, '')
+            id_a = getattr(rec, src_col, '')
+            id_b = getattr(rec, tgt_col, '')
 
             if id_a and id_b:
-                a_to_b[id_a].add(id_b)
+                data[id_a].add(id_b)
 
-        _log.info(
-            "BioMart: loaded %d entries for %s -> %s",
-            len(a_to_b),
-            id_type,
-            target_id_type,
-        )
-
-        return dict(a_to_b)
+        return dict(data)
 
     # ------------------------------------------------------------------
     # Direct HTTP fallback
     # ------------------------------------------------------------------
 
     def _read_direct(
-        self, id_type, target_id_type, ncbi_tax_id, **kwargs,
-    ):
+        self,
+        id_type: str,
+        target_id_type: str,
+        ncbi_tax_id: int,
+        *,
+        src_col: str,
+        tgt_col: str,
+        **kwargs: object,
+    ) -> dict[str, set[str]]:
         """Query Ensembl BioMart directly (no pypath dependency)."""
 
         import requests
 
-        reg = IdTypeRegistry.get()
+        dataset = self._dataset(ncbi_tax_id)
 
-        src_attr = reg.backend_column(id_type, "ensembl")
-        tgt_attr = reg.backend_column(target_id_type, "ensembl")
-
-        if not src_attr or not tgt_attr:
-            _log.debug(
-                "BioMart does not support %s -> %s",
-                id_type,
-                target_id_type,
-            )
+        if not dataset:
             return {}
-
-        ensembl_name = ensure_ensembl_name(ncbi_tax_id)
-
-        if not ensembl_name:
-            _log.warning("No Ensembl name for organism %d", ncbi_tax_id)
-            return {}
-
-        dataset = f"{ensembl_name}_gene_ensembl"
 
         attrs = (
-            [src_attr, tgt_attr]
-            if src_attr != tgt_attr
-            else [src_attr]
+            [src_col, tgt_col]
+            if src_col != tgt_col
+            else [src_col]
         )
         attr_xml = "\n        ".join(
             ATTR_TEMPLATE.format(name=a) for a in attrs
@@ -184,13 +164,6 @@ class BioMartBackend(MappingBackend):
 
                 if src and tgt:
                     data[src].add(tgt)
-
-        _log.info(
-            "BioMart: loaded %d entries for %s -> %s",
-            len(data),
-            id_type,
-            target_id_type,
-        )
 
         return dict(data)
 
