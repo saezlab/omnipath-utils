@@ -29,6 +29,8 @@ dependencies = [
     "dlmachine>=0.0.2",
     "narwhals>=1.0",
     "pydantic>=2.0",
+    "platformdirs>=4.0",
+    "requests>=2.28",
 ]
 description = "ID translation, taxonomy, orthology and reference lists for molecular biology"
 license = "GPL-3.0-or-later"
