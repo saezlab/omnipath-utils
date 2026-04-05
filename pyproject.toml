@@ -159,3 +159,6 @@ order-by-type = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.uv.sources]
+pypath-omnipath = { path = "../pypath", editable = true }
