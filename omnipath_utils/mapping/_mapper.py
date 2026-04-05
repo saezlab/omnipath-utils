@@ -17,8 +17,8 @@ _log = logging.getLogger(__name__)
 
 # UniProt AC format
 RE_UNIPROT = re.compile(
-    r'^[OPQ][0-9][A-Z0-9]{3}[0-9]$'
-    r'|^[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}$',
+    r"^[OPQ][0-9][A-Z0-9]{3}[0-9]$"
+    r"|^[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}$",
 )
 
 
@@ -65,49 +65,35 @@ class Mapper:
         import platformdirs
 
         return os.path.join(
-            platformdirs.user_cache_dir('omnipath_utils'),
-            'mapping',
+            platformdirs.user_cache_dir("omnipath_utils"),
+            "mapping",
         )
 
-    def map_name(
+    def _direct_lookup(
         self,
         name: str,
         id_type: str,
         target_id_type: str,
-        ncbi_tax_id: int | None = None,
+        ncbi_tax_id: int,
     ) -> set[str]:
-        """Translate a single identifier.
+        """Raw table lookup without any fallback logic."""
 
-        Args:
-            name: The identifier to translate.
-            id_type: Source ID type (e.g. 'genesymbol').
-            target_id_type: Target ID type (e.g. 'uniprot').
-            ncbi_tax_id: Organism. Defaults to human (9606).
-
-        Returns:
-            Set of target identifiers. Empty set if no mapping found.
-        """
-
-        ncbi_tax_id = ncbi_tax_id or self.ncbi_tax_id
-
-        id_type = self._id_types.resolve(id_type) or id_type
-        target_id_type = (
-            self._id_types.resolve(target_id_type) or target_id_type
-        )
-
-        if id_type == target_id_type:
-            return {name}
-
-        # Forward lookup
         table = self.which_table(id_type, target_id_type, ncbi_tax_id)
 
         if table:
-            result = table[name]
+            return table[name]
 
-            if result:
-                return result
+        return set()
 
-        # Reverse lookup
+    def _reverse_lookup(
+        self,
+        name: str,
+        id_type: str,
+        target_id_type: str,
+        ncbi_tax_id: int,
+    ) -> set[str]:
+        """Reverse lookup: scan target -> source tables for the name."""
+
         table = self.which_table(
             target_id_type,
             id_type,
@@ -123,6 +109,115 @@ class Mapper:
 
             if result:
                 return result
+
+        return set()
+
+    def map_name(
+        self,
+        name: str,
+        id_type: str,
+        target_id_type: str,
+        ncbi_tax_id: int | None = None,
+        strict: bool = False,
+        uniprot_cleanup_flag: bool = True,
+    ) -> set[str]:
+        """Translate a single identifier.
+
+        Args:
+            name: The identifier to translate.
+            id_type: Source ID type (e.g. genesymbol).
+            target_id_type: Target ID type (e.g. uniprot).
+            ncbi_tax_id: Organism. Defaults to human (9606).
+            strict: If True, skip fuzzy gene symbol fallbacks.
+            uniprot_cleanup_flag: If True and target is UniProt,
+                run cleanup (secondary -> primary AC translation).
+
+        Returns:
+            Set of target identifiers. Empty set if no mapping found.
+        """
+
+        if not name:
+            return set()
+
+        ncbi_tax_id = ncbi_tax_id or self.ncbi_tax_id
+
+        id_type = self._id_types.resolve(id_type) or id_type
+        target_id_type = (
+            self._id_types.resolve(target_id_type) or target_id_type
+        )
+
+        # Same type
+        if id_type == target_id_type:
+            return {name}
+
+        # Direct lookup
+        result = self._direct_lookup(
+            name, id_type, target_id_type, ncbi_tax_id,
+        )
+
+        if result:
+            if target_id_type == "uniprot" and uniprot_cleanup_flag:
+                from omnipath_utils.mapping._cleanup import uniprot_cleanup
+
+                result = uniprot_cleanup(result, ncbi_tax_id, mapper=self)
+
+            return result
+
+        # Special cases for gene symbols
+        if id_type in ("genesymbol", "genesymbol-syn"):
+            from omnipath_utils.mapping._special import (
+                map_genesymbol_fallbacks,
+            )
+
+            result = map_genesymbol_fallbacks(
+                name, target_id_type, ncbi_tax_id, self, strict,
+            )
+
+            if result:
+                return result
+
+        # RefSeq version handling
+        if id_type.startswith("refseq"):
+            from omnipath_utils.mapping._special import map_refseq
+
+            result = map_refseq(
+                name, id_type, target_id_type, ncbi_tax_id, self, strict,
+            )
+
+            if result:
+                return result
+
+        # Ensembl version stripping
+        if id_type.startswith("ens") and "." in name:
+            from omnipath_utils.mapping._special import (
+                map_ensembl_strip_version,
+            )
+
+            result = map_ensembl_strip_version(
+                name, id_type, target_id_type, ncbi_tax_id, self,
+            )
+
+            if result:
+                return result
+
+        # Chain translation via uniprot
+        if id_type != "uniprot" and target_id_type != "uniprot":
+            from omnipath_utils.mapping._special import chain_map
+
+            result = chain_map(
+                name, id_type, target_id_type, ncbi_tax_id, self,
+            )
+
+            if result:
+                return result
+
+        # Try reverse lookup
+        result = self._reverse_lookup(
+            name, id_type, target_id_type, ncbi_tax_id,
+        )
+
+        if result:
+            return result
 
         return set()
 
@@ -240,7 +335,7 @@ class Mapper:
                     )
             except Exception as e:
                 _log.warning(
-                    'Failed to load %s -> %s from %s: %s',
+                    "Failed to load %s -> %s from %s: %s",
                     id_type,
                     target_id_type,
                     backend_name,
@@ -251,8 +346,8 @@ class Mapper:
 
     # Map from backend registry name to id_types.yaml backend key
     _BACKEND_YAML_KEYS: dict[str, str] = {
-        'uniprot': 'uniprot',
-        'biomart': 'ensembl',
+        "uniprot": "uniprot",
+        "biomart": "ensembl",
     }
 
     def _find_backends(
@@ -301,7 +396,7 @@ class Mapper:
         expired = [k for k, t in self.tables.items() if t.expired]
 
         for k in expired:
-            _log.debug('Removing expired table: %s', k)
+            _log.debug("Removing expired table: %s", k)
             del self.tables[k]
 
     def id_types(self) -> list[str]:
@@ -311,6 +406,6 @@ class Mapper:
 
     def __repr__(self) -> str:
         return (
-            f'<Mapper tables={len(self.tables)}, '
-            f'organism={self.ncbi_tax_id}>'
+            f"<Mapper tables={len(self.tables)}, "
+            f"organism={self.ncbi_tax_id}>"
         )
