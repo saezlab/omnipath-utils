@@ -141,15 +141,22 @@ async def landing_page() -> Response:
     <link rel="stylesheet" href="https://omnipathdb.org/css/normalize.css">
     <link rel="stylesheet" href="https://omnipathdb.org/css/barebones.css">
     <link rel="stylesheet" href="https://omnipathdb.org/css/omnipath.css">
+    <link rel="icon" type="image/vnd.microsoft.icon" href="https://omnipathdb.org/favicon.ico">
+    <style>
+        h5 { font-weight: 600; }
+        .box code, .box a.code { font-size: 85%; }
+        pre code { font-size: 85%; }
+    </style>
 </head>
 <body>
-    <!-- Header: logo area + title -->
+    <!-- Header: logo + title -->
     <div class="grid-container u-align-left thirds">
         <div>
-            <h2 style="color: #6EA945;">OmniPath</h2>
+            <img src="https://omnipathdb.org/img/omnipath_logo.png"
+                 title="OmniPath" class="full-width" />
         </div>
         <div class="span2 u-align-right">
-            <h2>Utils: ID translation &amp; taxonomy service</h2>
+            <h2>Utilities for molecular prior-knowledge processing</h2>
         </div>
     </div>
 
@@ -157,6 +164,7 @@ async def landing_page() -> Response:
     <div class="grid-container u-align-left full">
         <nav>
             <a class="topmenu" href="#try"><span class="nav">try it</span></a>
+            <a class="topmenu" href="#python"><span class="nav">Python</span></a>
             <a class="topmenu" href="/schema/swagger"><span class="nav">API docs</span></a>
             <a class="topmenu" href="/health"><span class="nav">status</span></a>
             <a class="topmenu" href="https://saezlab.github.io/omnipath-utils"><span class="nav">documentation</span></a>
@@ -165,70 +173,69 @@ async def landing_page() -> Response:
         </nav>
     </div>
 
-    <!-- About section -->
+    <!-- About -->
     <div class="grid-container u-align-left full">
         <div>
             <p>
                 OmniPath Utils provides ID translation, taxonomy resolution, and
                 reference lists for molecular biology. It translates between 97
                 identifier types across UniProt, Ensembl, HGNC, Entrez, ChEBI, HMDB
-                and more. Available as a Python library and as this HTTP API.
+                and more. Available as a Python library and as this HTTP API with
+                <a href="/schema/swagger">interactive documentation</a>.
             </p>
+            <ul>
+                <li><strong>ID translation</strong> &mdash; translate between gene symbols, UniProt, Ensembl, Entrez, and 90+ other identifier types</li>
+                <li><strong>Taxonomy</strong> &mdash; resolve organism names across NCBI, Ensembl, KEGG, OMA and miRBase naming systems</li>
+                <li><strong>Reference lists</strong> &mdash; complete sets of identifiers, e.g. all human SwissProt IDs</li>
+            </ul>
         </div>
     </div>
 
-    <!-- Example queries in grid -->
-    <div class="grid-container u-align-left thirds" id="try">
-        <div class="content-box">
-            <h4>Translate gene symbols</h4>
+    <!-- Example queries -->
+    <div class="grid-container u-align-left full" id="try">
+        <div>
+            <h5>Example queries</h5>
+            <p>Translate gene symbols to UniProt:</p>
             <div class="box codebox">
                 <a href="/mapping/translate?identifiers=TP53,EGFR,BRCA1&amp;id_type=genesymbol&amp;target_id_type=uniprot" class="no-uline code">/mapping/translate?identifiers=TP53,EGFR,BRCA1&amp;id_type=genesymbol&amp;target_id_type=uniprot</a>
             </div>
-        </div>
-        <div class="content-box">
-            <h4>Translate Entrez IDs</h4>
+            <p>Translate Entrez Gene IDs to UniProt:</p>
             <div class="box codebox">
                 <a href="/mapping/translate?identifiers=7157,1956&amp;id_type=entrez&amp;target_id_type=uniprot" class="no-uline code">/mapping/translate?identifiers=7157,1956&amp;id_type=entrez&amp;target_id_type=uniprot</a>
             </div>
-        </div>
-        <div class="content-box">
-            <h4>Resolve organism</h4>
+            <p>Resolve an organism:</p>
             <div class="box codebox">
                 <a href="/taxonomy/resolve?organism=human" class="no-uline code">/taxonomy/resolve?organism=human</a>
             </div>
-        </div>
-        <div class="content-box">
-            <h4>List ID types</h4>
-            <div class="box quotebox">
-                <p>97 identifier types with metadata</p>
-                <a href="/mapping/id-types">/mapping/id-types</a>
-            </div>
-        </div>
-        <div class="content-box">
-            <h4>List organisms</h4>
-            <div class="box quotebox">
-                <p>22 organisms with all name forms</p>
-                <a href="/taxonomy/organisms">/taxonomy/organisms</a>
-            </div>
-        </div>
-        <div class="content-box">
-            <h4>API Documentation</h4>
-            <div class="box yellowbox">
-                <p>Interactive Swagger UI</p>
-                <a href="/schema/swagger">Open API docs</a>
-            </div>
+            <p>More endpoints:</p>
+            <ul>
+                <li><a href="/mapping/id-types">/mapping/id-types</a> &mdash; all 97 supported identifier types</li>
+                <li><a href="/taxonomy/organisms">/taxonomy/organisms</a> &mdash; all 22 organisms with name forms</li>
+                <li><a href="/reflists/list-names">/reflists/list-names</a> &mdash; available reference lists</li>
+                <li><a href="/schema/swagger">/schema/swagger</a> &mdash; interactive API documentation</li>
+                <li><a href="/schema/openapi.json">/schema/openapi.json</a> &mdash; OpenAPI schema</li>
+                <li><a href="/health">/health</a> &mdash; service status and database statistics</li>
+            </ul>
         </div>
     </div>
 
     <!-- Python usage -->
-    <div class="grid-container u-align-left full">
+    <div class="grid-container u-align-left full" id="python">
         <div>
-            <h4>Python</h4>
+            <h5>Python</h5>
             <div class="box codebox">
                 <pre><code>from omnipath_utils.mapping import map_name
-map_name('TP53', 'genesymbol', 'uniprot')
-# {'P04637', ...}</code></pre>
+from omnipath_utils.taxonomy import ensure_ncbi_tax_id
+from omnipath_utils.reflists import is_swissprot
+
+map_name('TP53', 'genesymbol', 'uniprot')    # {'P04637', ...}
+ensure_ncbi_tax_id('human')                   # 9606
+is_swissprot('P04637')                        # True</code></pre>
             </div>
+            <p>
+                Install: <code>pip install omnipath-utils</code>
+                &middot; <a href="https://saezlab.github.io/omnipath-utils">Read the docs</a>
+            </p>
         </div>
     </div>
 
