@@ -20,6 +20,7 @@ class DatabaseBuilder:
     """Orchestrates building the omnipath_utils database."""
 
     def __init__(self, db_url: str | None = None):
+        self._db_url = db_url
         self.engine = get_engine(db_url)
         ensure_schema(self.engine)
 
@@ -140,7 +141,7 @@ class DatabaseBuilder:
 
         # Bulk insert via COPY using psycopg3
         from omnipath_utils.db._connection import get_connection, get_db_url
-        conn = get_connection()
+        conn = get_connection(self._db_url)
 
         row_count = 0
         with conn.cursor() as cur:

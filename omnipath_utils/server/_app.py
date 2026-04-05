@@ -53,6 +53,7 @@ def create_app(db_url: str | None = None) -> Litestar:
             TaxonomyController,
             ReflistController,
             health_check,
+            landing_page,
         ],
         openapi_config=OpenAPIConfig(
             title='omnipath-utils',
@@ -73,3 +74,25 @@ def create_app(db_url: str | None = None) -> Litestar:
 async def health_check() -> dict:
     """Health check endpoint."""
     return {'status': 'ok', 'service': 'omnipath-utils'}
+
+
+@get("/", sync_to_thread=False)
+async def landing_page() -> dict:
+    """Landing page with service info and links."""
+    return {
+        "service": "omnipath-utils",
+        "version": "0.0.1",
+        "description": "ID translation, taxonomy, and reference lists for molecular biology",
+        "documentation": "https://saezlab.github.io/omnipath-utils",
+        "endpoints": {
+            "translate": "/mapping/translate?identifiers=TP53&id_type=genesymbol&target_id_type=uniprot",
+            "id_types": "/mapping/id-types",
+            "taxonomy": "/taxonomy/resolve?organism=human",
+            "organisms": "/taxonomy/organisms",
+            "reflists": "/reflists/list-names",
+            "openapi": "/schema/openapi.json",
+            "health": "/health",
+        },
+        "source": "https://github.com/saezlab/omnipath-utils",
+        "part_of": "https://omnipathdb.org",
+    }
