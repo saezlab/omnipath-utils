@@ -8,12 +8,14 @@ from typing import Generator
 from litestar import Litestar, get
 from litestar.config.cors import CORSConfig
 from litestar.openapi import OpenAPIConfig
+from litestar.openapi.plugins import SwaggerRenderPlugin
 from litestar.di import Provide
+from litestar.response import Response
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from omnipath_utils.db._connection import get_db_url
+from omnipath_utils.db._connection import get_db_url, SCHEMA
 
 _log = logging.getLogger(__name__)
 
@@ -59,9 +61,10 @@ def create_app(db_url: str | None = None) -> Litestar:
             title='omnipath-utils',
             version='0.0.1',
             description=(
-                'ID translation, taxonomy, and reference lists'
+                'ID translation, taxonomy, orthology and reference lists'
                 ' for molecular biology'
             ),
+            render_plugins=[SwaggerRenderPlugin()],
         ),
         cors_config=CORSConfig(allow_origins=['*']),
         dependencies={'session': Provide(get_session)},
@@ -71,28 +74,172 @@ def create_app(db_url: str | None = None) -> Litestar:
 
 
 @get('/health')
-async def health_check() -> dict:
-    """Health check endpoint."""
-    return {'status': 'ok', 'service': 'omnipath-utils'}
+async def health_check(session: Session) -> dict:
+    """Health check with service info and database statistics."""
 
+    stats = {}
+    backends = []
+    builds = []
 
-@get("/", sync_to_thread=False)
-async def landing_page() -> dict:
-    """Landing page with service info and links."""
+    try:
+        for table in ('id_type', 'backend', 'organism', 'id_mapping', 'reflist', 'build_info'):
+            row = session.execute(text(f'SELECT count(*) FROM {SCHEMA}.{table}')).scalar()
+            stats[table] = row
+        db_status = 'connected'
+    except Exception as e:
+        db_status = f'error: {e}'
+
+    try:
+        rows = session.execute(text(f'SELECT name FROM {SCHEMA}.backend ORDER BY name')).fetchall()
+        backends = [r[0] for r in rows]
+    except Exception:
+        pass
+
+    try:
+        rows = session.execute(
+            text(
+                f'SELECT source_type, target_type, ncbi_tax_id, backend, '
+                f'row_count, built_at, duration_secs, status '
+                f'FROM {SCHEMA}.build_info ORDER BY built_at DESC'
+            )
+        ).fetchall()
+        for r in rows:
+            builds.append({
+                'source_type': r[0],
+                'target_type': r[1],
+                'ncbi_tax_id': r[2],
+                'backend': r[3],
+                'row_count': r[4],
+                'built_at': r[5].isoformat() if r[5] else None,
+                'duration_secs': float(r[6]) if r[6] is not None else None,
+                'status': r[7],
+            })
+    except Exception:
+        pass
+
     return {
-        "service": "omnipath-utils",
-        "version": "0.0.1",
-        "description": "ID translation, taxonomy, and reference lists for molecular biology",
-        "documentation": "https://saezlab.github.io/omnipath-utils",
-        "endpoints": {
-            "translate": "/mapping/translate?identifiers=TP53&id_type=genesymbol&target_id_type=uniprot",
-            "id_types": "/mapping/id-types",
-            "taxonomy": "/taxonomy/resolve?organism=human",
-            "organisms": "/taxonomy/organisms",
-            "reflists": "/reflists/list-names",
-            "openapi": "/schema/openapi.json",
-            "health": "/health",
-        },
-        "source": "https://github.com/saezlab/omnipath-utils",
-        "part_of": "https://omnipathdb.org",
+        'status': 'ok',
+        'service': 'omnipath-utils',
+        'version': '0.0.1',
+        'database': db_status,
+        'stats': stats,
+        'backends': backends,
+        'builds': builds,
     }
+
+
+@get('/')
+async def landing_page() -> Response:
+    """HTML landing page."""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniPath Utils</title>
+    <link href="https://fonts.googleapis.com/css?family=Raleway:400,300,600" rel="stylesheet">
+    <link rel="stylesheet" href="https://omnipathdb.org/css/normalize.css">
+    <link rel="stylesheet" href="https://omnipathdb.org/css/barebones.css">
+    <link rel="stylesheet" href="https://omnipathdb.org/css/omnipath.css">
+</head>
+<body>
+    <!-- Header: logo area + title -->
+    <div class="grid-container u-align-left thirds">
+        <div>
+            <h2 style="color: #6EA945;">OmniPath</h2>
+        </div>
+        <div class="span2 u-align-right">
+            <h2>Utils: ID translation &amp; taxonomy service</h2>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="grid-container u-align-left full">
+        <nav>
+            <a class="topmenu" href="#try"><span class="nav">try it</span></a>
+            <a class="topmenu" href="/schema/swagger"><span class="nav">API docs</span></a>
+            <a class="topmenu" href="/health"><span class="nav">status</span></a>
+            <a class="topmenu" href="https://saezlab.github.io/omnipath-utils"><span class="nav">documentation</span></a>
+            <a class="topmenu" href="https://github.com/saezlab/omnipath-utils"><span class="nav">GitHub</span></a>
+            <a class="topmenu" href="https://omnipathdb.org"><span class="nav">OmniPath</span></a>
+        </nav>
+    </div>
+
+    <!-- About section -->
+    <div class="grid-container u-align-left full">
+        <div>
+            <p>
+                OmniPath Utils provides ID translation, taxonomy resolution, and
+                reference lists for molecular biology. It translates between 97
+                identifier types across UniProt, Ensembl, HGNC, Entrez, ChEBI, HMDB
+                and more. Available as a Python library and as this HTTP API.
+            </p>
+        </div>
+    </div>
+
+    <!-- Example queries in grid -->
+    <div class="grid-container u-align-left thirds" id="try">
+        <div class="content-box">
+            <h4>Translate gene symbols</h4>
+            <div class="box codebox">
+                <a href="/mapping/translate?identifiers=TP53,EGFR,BRCA1&amp;id_type=genesymbol&amp;target_id_type=uniprot" class="no-uline code">/mapping/translate?identifiers=TP53,EGFR,BRCA1&amp;id_type=genesymbol&amp;target_id_type=uniprot</a>
+            </div>
+        </div>
+        <div class="content-box">
+            <h4>Translate Entrez IDs</h4>
+            <div class="box codebox">
+                <a href="/mapping/translate?identifiers=7157,1956&amp;id_type=entrez&amp;target_id_type=uniprot" class="no-uline code">/mapping/translate?identifiers=7157,1956&amp;id_type=entrez&amp;target_id_type=uniprot</a>
+            </div>
+        </div>
+        <div class="content-box">
+            <h4>Resolve organism</h4>
+            <div class="box codebox">
+                <a href="/taxonomy/resolve?organism=human" class="no-uline code">/taxonomy/resolve?organism=human</a>
+            </div>
+        </div>
+        <div class="content-box">
+            <h4>List ID types</h4>
+            <div class="box quotebox">
+                <p>97 identifier types with metadata</p>
+                <a href="/mapping/id-types">/mapping/id-types</a>
+            </div>
+        </div>
+        <div class="content-box">
+            <h4>List organisms</h4>
+            <div class="box quotebox">
+                <p>22 organisms with all name forms</p>
+                <a href="/taxonomy/organisms">/taxonomy/organisms</a>
+            </div>
+        </div>
+        <div class="content-box">
+            <h4>API Documentation</h4>
+            <div class="box yellowbox">
+                <p>Interactive Swagger UI</p>
+                <a href="/schema/swagger">Open API docs</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Python usage -->
+    <div class="grid-container u-align-left full">
+        <div>
+            <h4>Python</h4>
+            <div class="box codebox">
+                <pre><code>from omnipath_utils.mapping import map_name
+map_name('TP53', 'genesymbol', 'uniprot')
+# {'P04637', ...}</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="grid-container u-align-left full">
+        <p class="small">
+            Part of <a href="https://omnipathdb.org">OmniPath</a> &middot;
+            Developed in <a href="https://saezlab.org">Saez Lab</a> &middot;
+            <a href="https://github.com/saezlab/omnipath-utils">Source code</a>
+        </p>
+    </div>
+</body>
+</html>"""
+    return Response(content=html, media_type='text/html')
