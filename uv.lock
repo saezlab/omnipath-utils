@@ -1809,10 +1809,15 @@ server = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 tests = [
+    { name = "asyncpg" },
     { name = "coverage" },
+    { name = "litestar", extra = ["standard"] },
+    { name = "psycopg", extra = ["binary"] },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
@@ -1829,6 +1834,7 @@ requires-dist = [
     { name = "narwhals", specifier = ">=1.0" },
     { name = "omnipath-utils", extras = ["db"], marker = "extra == 'build'" },
     { name = "omnipath-utils", extras = ["db"], marker = "extra == 'server'" },
+    { name = "omnipath-utils", extras = ["server"], marker = "extra == 'tests'" },
     { name = "pkg-infra", specifier = ">=0.1.1" },
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "pre-commit", marker = "extra == 'dev'" },

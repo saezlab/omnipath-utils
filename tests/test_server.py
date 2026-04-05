@@ -2,6 +2,8 @@
 
 import pytest
 from unittest.mock import patch
+
+litestar = pytest.importorskip("litestar", reason="litestar not installed")
 from litestar.testing import TestClient
 
 from omnipath_utils.server._app import create_app

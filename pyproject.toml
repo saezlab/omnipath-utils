@@ -71,6 +71,7 @@ docs = [
     "mkdocstrings[python]>=0.29",
 ]
 tests = [
+    "omnipath-utils[server]",
     "pytest>=6.0",
     "pytest-cov",
     "coverage>=6.0",

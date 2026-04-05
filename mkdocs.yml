@@ -41,7 +41,7 @@ nav:
 
 markdown_extensions:
   - pymdownx.highlight:
-      anchor_liners: true
+
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
