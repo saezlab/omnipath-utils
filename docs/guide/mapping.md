@@ -1,5 +1,24 @@
 # ID Translation
 
+!!! tip "Using omnipath-client"
+
+    All the translation functions below are also available through the
+    [omnipath-client](https://saezlab.github.io/omnipath-client/) package,
+    which queries the web service and requires no local setup:
+
+    ```python
+    from omnipath_client.utils import map_name, translate_column
+
+    map_name("TP53", "genesymbol", "uniprot")  # {"P04637"}
+
+    # Translate a DataFrame column (pandas, polars, or pyarrow)
+    translate_column(df, "gene", "genesymbol", "uniprot")
+    ```
+
+    ```bash
+    pip install omnipath-client
+    ```
+
 ## Overview
 
 omnipath-utils translates between 97 biological identifier types --

@@ -5,6 +5,26 @@
 ID translation, taxonomy, reference lists, orthologous genes, and more. Also
 available as a web service: https://utils.omnipathdb.org/
 
+## For most users: use omnipath-client
+
+If you just want to translate IDs, resolve organisms, or access reference
+lists, install the lightweight client:
+
+```bash
+pip install omnipath-client
+```
+
+```python
+from omnipath_client.utils import map_name, translate_column
+map_name('TP53', 'genesymbol', 'uniprot')  # {'P04637'}
+```
+
+The client queries the [utils.omnipathdb.org](https://utils.omnipathdb.org)
+web service -- no database setup required, same API as the local package.
+
+Install `omnipath-utils` directly only if you need to run the service
+locally or build the database yourself.
+
 ## Quick Start
 
 ```python
