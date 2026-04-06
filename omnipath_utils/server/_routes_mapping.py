@@ -80,7 +80,7 @@ def _apply_fallbacks(
                     upper_ids.append(u)
 
             if upper_ids:
-                upper_result = translate_ids(
+                upper_result, _ub = translate_ids(
                     session,
                     upper_ids,
                     id_type_resolved,
@@ -103,7 +103,7 @@ def _apply_fallbacks(
                         cap_ids.append(c)
 
                 if cap_ids:
-                    cap_result = translate_ids(
+                    cap_result, _ = translate_ids(
                         session,
                         cap_ids,
                         id_type_resolved,
@@ -117,7 +117,7 @@ def _apply_fallbacks(
             # Try synonyms
             still_unmapped = [i for i in unmapped if not result.get(i)]
             if still_unmapped:
-                syn_result = translate_ids(
+                syn_result, _sb = translate_ids(
                     session,
                     still_unmapped,
                     'genesymbol-syn',
@@ -134,7 +134,7 @@ def _apply_fallbacks(
                 ]
                 if still_unmapped:
                     upper_syns = [n.upper() for n in still_unmapped]
-                    syn_upper = translate_ids(
+                    syn_upper, _ = translate_ids(
                         session,
                         upper_syns,
                         'genesymbol-syn',
@@ -153,7 +153,7 @@ def _apply_fallbacks(
         and id_type_resolved != 'uniprot'
         and target_resolved != 'uniprot'
     ):
-        intermediate = translate_ids(
+        intermediate, _ib = translate_ids(
             session,
             still_unmapped,
             id_type_resolved,
@@ -162,7 +162,7 @@ def _apply_fallbacks(
         )
         for src, uniprots in intermediate.items():
             if uniprots:
-                final = translate_ids(
+                final, _fb = translate_ids(
                     session,
                     list(uniprots),
                     'uniprot',
@@ -225,7 +225,7 @@ class MappingController(Controller):
 
         id_list = [i.strip() for i in identifiers.split(',') if i.strip()]
 
-        result = translate_ids(
+        result, backends_used = translate_ids(
             session,
             id_list,
             id_type_resolved,
@@ -262,7 +262,7 @@ class MappingController(Controller):
                 'total_input': len(id_list),
                 'total_mapped': len(mapped),
                 'raw': raw,
-                'backend': backend,
+                'backend': sorted(backends_used) if backends_used else backend,
             },
         }
 
@@ -297,7 +297,7 @@ class MappingController(Controller):
         id_type_resolved = reg.resolve(id_type) or id_type
         target_resolved = reg.resolve(target_id_type) or target_id_type
 
-        result = translate_ids(
+        result, backends_used = translate_ids(
             session,
             id_list,
             id_type_resolved,
@@ -334,7 +334,7 @@ class MappingController(Controller):
                 'total_input': len(id_list),
                 'total_mapped': len(mapped),
                 'raw': raw,
-                'backend': backend,
+                'backend': sorted(backends_used) if backends_used else backend,
             },
         }
 

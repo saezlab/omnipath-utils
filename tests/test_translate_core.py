@@ -317,7 +317,7 @@ class TestRESTFallbacks:
             data = {
                 'TP53': {'P04637'},
             }
-            return {i: data.get(i, set()) for i in ids if data.get(i)}
+            return ({i: data.get(i, set()) for i in ids if data.get(i)}, {'uniprot'})
 
         with patch(
             'omnipath_utils.server._routes_mapping.translate_ids',
@@ -345,11 +345,11 @@ class TestRESTFallbacks:
             call_count['n'] += 1
             # genesymbol -> uniprot
             if src == 'entrez' and tgt == 'uniprot':
-                return {'7157': {'P04637'}} if '7157' in ids else {}
+                return ({'7157': {'P04637'}}, {'uniprot'}) if '7157' in ids else ({}, set())
             # uniprot -> genesymbol
             if src == 'uniprot' and tgt == 'genesymbol':
-                return {'P04637': {'TP53'}} if 'P04637' in ids else {}
-            return {}
+                return ({'P04637': {'TP53'}}, {'uniprot'}) if 'P04637' in ids else ({}, set())
+            return ({}, set())
 
         with patch(
             'omnipath_utils.server._routes_mapping.translate_ids',

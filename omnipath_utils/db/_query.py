@@ -19,19 +19,22 @@ def translate_ids(
     source_type: str,
     target_type: str,
     ncbi_tax_id: int,
-) -> dict[str, set[str]]:
+) -> tuple[dict[str, set[str]], set[str]]:
     """Translate IDs via the database.
 
-    Returns dict mapping source IDs to sets of target IDs.
+    Returns:
+        Tuple of (results dict, set of backend names used).
     """
     result = defaultdict(set)
+    backends_used = set()
 
     rows = session.execute(
         text(f"""
-            SELECT m.source_id, m.target_id
+            SELECT m.source_id, m.target_id, b.name
             FROM {SCHEMA}.id_mapping m
             JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
             JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
+            JOIN {SCHEMA}.backend b ON m.backend_id = b.id
             WHERE st.name = :src_type
             AND tt.name = :tgt_type
             AND m.ncbi_tax_id = :tax
@@ -47,8 +50,9 @@ def translate_ids(
 
     for row in rows:
         result[row[0]].add(row[1])
+        backends_used.add(row[2])
 
-    return dict(result)
+    return dict(result), backends_used
 
 
 def get_full_table(

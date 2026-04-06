@@ -105,7 +105,7 @@ class TestMappingEndpoints:
 
     @patch('omnipath_utils.server._routes_mapping.translate_ids')
     def test_translate_get(self, mock_translate, client):
-        mock_translate.return_value = {'TP53': {'P04637'}}
+        mock_translate.return_value = ({'TP53': {'P04637'}}, {'uniprot'})
         resp = client.get(
             '/mapping/translate',
             params={
@@ -119,7 +119,7 @@ class TestMappingEndpoints:
 
     @patch('omnipath_utils.server._routes_mapping.translate_ids')
     def test_translate_post(self, mock_translate, client):
-        mock_translate.return_value = {'TP53': {'P04637'}}
+        mock_translate.return_value = ({'TP53': {'P04637'}}, {'uniprot'})
         resp = client.post(
             '/mapping/translate',
             json={
@@ -142,7 +142,7 @@ class TestRESTParams:
     @patch('omnipath_utils.server._routes_mapping.translate_ids')
     def test_raw_parameter(self, mock_translate, client):
         """Test that raw=true is accepted and reflected in meta."""
-        mock_translate.return_value = {'TP53': {'P04637'}}
+        mock_translate.return_value = ({'TP53': {'P04637'}}, {'uniprot'})
         resp = client.get(
             '/mapping/translate',
             params={
@@ -159,7 +159,7 @@ class TestRESTParams:
     @patch('omnipath_utils.server._routes_mapping.translate_ids')
     def test_backend_parameter(self, mock_translate, client):
         """Test that backend parameter is accepted and reflected in meta."""
-        mock_translate.return_value = {'TP53': {'P04637'}}
+        mock_translate.return_value = ({'TP53': {'P04637'}}, {'uniprot'})
         resp = client.get(
             '/mapping/translate',
             params={
@@ -171,7 +171,7 @@ class TestRESTParams:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data['meta']['backend'] == 'biomart'
+        assert data['meta']['backend'] == ['uniprot']  # reports actual DB backends used
 
     @patch('omnipath_utils.server._routes_mapping.translate_ids')
     def test_raw_skips_fallbacks(self, mock_translate, client):
@@ -179,7 +179,7 @@ class TestRESTParams:
 
         # Only return result for exact match; lowercase should miss
         def side_effect(session, ids, src, tgt, tax):
-            return {i: {'P04637'} for i in ids if i == 'TP53'}
+            return ({i: {'P04637'} for i in ids if i == 'TP53'}, {'uniprot'})
 
         mock_translate.side_effect = side_effect
 
@@ -208,7 +208,7 @@ class TestRESTParams:
             for i in ids:
                 if i == 'TP53':
                     result[i] = {'P04637'}
-            return result
+            return (result, {'uniprot'})
 
         mock_translate.side_effect = side_effect
 

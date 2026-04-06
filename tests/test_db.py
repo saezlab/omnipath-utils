@@ -62,12 +62,12 @@ class TestQuery:
 
         mock_session = MagicMock()
         mock_session.execute.return_value = [
-            ('TP53', 'P04637'),
-            ('TP53', 'A0A024R1R8'),
-            ('EGFR', 'P00533'),
+            ('TP53', 'P04637', 'uniprot'),
+            ('TP53', 'A0A024R1R8', 'uniprot'),
+            ('EGFR', 'P00533', 'uniprot'),
         ]
 
-        result = translate_ids(
+        result, backends = translate_ids(
             mock_session, ['TP53', 'EGFR'], 'genesymbol', 'uniprot', 9606
         )
         assert 'P04637' in result['TP53']
@@ -82,7 +82,7 @@ class TestQuery:
         result = translate_ids(
             mock_session, ['FAKE'], 'genesymbol', 'uniprot', 9606
         )
-        assert result == {}
+        result_dict, backends = result; assert result_dict == {} and backends == set()
 
 
 class TestDatabaseBuilder:
