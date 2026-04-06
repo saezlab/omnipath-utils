@@ -88,19 +88,32 @@ class UniProtFTPBackend(MappingBackend):
         if not ftp_type:
             return {}
 
-        url = self._organism_url(ncbi_tax_id)
-        if not url:
+        urls = self._organism_urls(ncbi_tax_id)
+        if not urls:
             return {}
 
-        _log.info('Downloading FTP idmapping from %s', url)
-        resp = requests.get(url, timeout=600, stream=True)
-        resp.raise_for_status()
+        tmp_path = None
 
-        # Write to temp file and parse
-        with tempfile.NamedTemporaryFile(suffix='.dat.gz', delete=False) as tmp:
-            for chunk in resp.iter_content(chunk_size=8192):
-                tmp.write(chunk)
-            tmp_path = tmp.name
+        for url in urls:
+            _log.info('Trying FTP idmapping from %s', url)
+
+            try:
+                resp = requests.get(url, timeout=(10, 600), stream=True)
+                resp.raise_for_status()
+
+                with tempfile.NamedTemporaryFile(suffix='.dat.gz', delete=False) as tmp:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        tmp.write(chunk)
+                    tmp_path = tmp.name
+
+                break
+
+            except Exception as e:
+                _log.warning('Failed %s: %s', url, e)
+
+        if not tmp_path:
+            _log.error('All UniProt FTP mirrors failed')
+            return {}
 
         data = defaultdict(set)
         try:
@@ -119,22 +132,29 @@ class UniProtFTPBackend(MappingBackend):
         """Map our canonical ID type name to the FTP file's ID type name."""
         return CANONICAL_TO_FTP.get(canonical_name)
 
-    @staticmethod
-    def _organism_url(ncbi_tax_id: int) -> str | None:
-        _CODES = {
-            9606: 'HUMAN', 10090: 'MOUSE', 10116: 'RAT',
-            559292: 'YEAST', 83333: 'ECOLI', 7227: 'DROME',
-            7955: 'DANRE', 6239: 'CAEEL', 9031: 'CHICK',
-            3702: 'ARATH', 44689: 'DICDI', 284812: 'SCHPO',
-        }
-        code = _CODES.get(ncbi_tax_id)
+    _FTP_BASES = (
+        'https://ftp.uniprot.org/pub/databases/uniprot',
+        'https://ftp.ebi.ac.uk/pub/databases/uniprot',
+        'https://ftp.expasy.org/databases/uniprot',
+    )
+    _IDMAPPING_PATH = 'current_release/knowledgebase/idmapping'
+    _CODES = {
+        9606: 'HUMAN', 10090: 'MOUSE', 10116: 'RAT',
+        559292: 'YEAST', 83333: 'ECOLI', 7227: 'DROME',
+        7955: 'DANRE', 6239: 'CAEEL', 9031: 'CHICK',
+        3702: 'ARATH', 44689: 'DICDI', 284812: 'SCHPO',
+    }
+
+    @classmethod
+    def _organism_urls(cls, ncbi_tax_id: int) -> list[str]:
+        code = cls._CODES.get(ncbi_tax_id)
         if not code:
-            return None
-        return (
-            f'https://ftp.uniprot.org/pub/databases/uniprot/'
-            f'current_release/knowledgebase/idmapping/'
+            return []
+        path = (
+            f'{cls._IDMAPPING_PATH}/'
             f'by_organism/{code}_{ncbi_tax_id}_idmapping.dat.gz'
         )
+        return [f'{base}/{path}' for base in cls._FTP_BASES]
 
     @staticmethod
     def _load_mapping(ftp_type: str, ncbi_tax_id: int) -> dict[str, set[str]]:
