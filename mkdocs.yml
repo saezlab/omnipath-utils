@@ -39,6 +39,7 @@ nav:
   - Quick Start: quickstart.md
 - User Guide:
   - ID Translation: guide/mapping.md
+  - Advanced Translation: guide/mapping-advanced.md
   - Taxonomy: guide/taxonomy.md
   - Reference Lists: guide/reflists.md
 - Deployment:

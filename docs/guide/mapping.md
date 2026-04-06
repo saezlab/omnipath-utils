@@ -44,6 +44,8 @@ def map_name(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int | None = None,
+    raw: bool = False,
+    backend: str | None = None,
 ) -> set[str]
 ```
 
@@ -72,6 +74,8 @@ def map_names(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int | None = None,
+    raw: bool = False,
+    backend: str | None = None,
 ) -> set[str]
 ```
 
@@ -92,6 +96,8 @@ def map_name0(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int | None = None,
+    raw: bool = False,
+    backend: str | None = None,
 ) -> str | None
 ```
 
@@ -115,6 +121,8 @@ def translate(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int | None = None,
+    raw: bool = False,
+    backend: str | None = None,
 ) -> dict[str, set[str]]
 ```
 
@@ -127,9 +135,10 @@ translate(['TP53', 'EGFR', 'FAKE'], 'genesymbol', 'uniprot')
 ```
 
 !!! note
-    `translate` performs a direct table lookup without the full fallback
-    pipeline. For comprehensive translation with all fallback strategies,
-    iterate with `map_name` instead.
+    `translate` uses vectorized table lookup for the first pass, then
+    falls back to per-ID `map_name` (with full special-case handling)
+    for any identifiers that miss in the table. Use `raw=True` to
+    restrict to table lookup only with no fallbacks.
 
 #### `translation_table` -- full mapping table
 
@@ -177,6 +186,10 @@ All translation functions accept these parameters:
 | `id_type` | `str` | required | Source ID type (e.g. `genesymbol`, `uniprot`, `ensg`, `hmdb`) |
 | `target_id_type` | `str` | required | Target ID type |
 | `ncbi_tax_id` | `int \| None` | `9606` (human) | NCBI Taxonomy ID for the organism |
+| `raw` | `bool` | `False` | Skip all special-case handling (direct table lookup only) |
+| `backend` | `str \| None` | `None` | Force a specific backend (e.g. `uniprot`, `biomart`) |
+
+For details on these parameters, see [Advanced Translation](mapping-advanced.md).
 
 The `Mapper.map_name` method (accessed via the singleton) accepts two
 additional parameters:
@@ -238,6 +251,8 @@ Translate a comma-separated list of identifiers.
 | `id_type` | string | yes | Source ID type |
 | `target_id_type` | string | yes | Target ID type |
 | `ncbi_tax_id` | int | no | NCBI Taxonomy ID (default: 9606) |
+| `raw` | bool | no | Skip special-case handling (default: false) |
+| `backend` | string | no | Force specific backend (default: null) |
 
 ```bash
 curl "https://omnipathdb.org/mapping/translate?\
@@ -258,7 +273,9 @@ endpoint with a JSON body.
     "identifiers": ["TP53", "EGFR", "BRCA1", "..."],
     "id_type": "genesymbol",
     "target_id_type": "uniprot",
-    "ncbi_tax_id": 9606
+    "ncbi_tax_id": 9606,
+    "raw": false,
+    "backend": null
 }
 ```
 
@@ -298,7 +315,9 @@ Both GET and POST `/mapping/translate` return the same JSON structure:
         "target_id_type": "uniprot",
         "ncbi_tax_id": 9606,
         "total_input": 4,
-        "total_mapped": 3
+        "total_mapped": 3,
+        "raw": false,
+        "backend": null
     }
 }
 ```

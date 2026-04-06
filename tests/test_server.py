@@ -131,3 +131,90 @@ class TestReflistEndpoints:
         resp = client.get("/reflists/list-names")
         assert resp.status_code == 200
         assert "swissprot" in resp.json()
+
+
+class TestRESTParams:
+
+    @patch("omnipath_utils.server._routes_mapping.translate_ids")
+    def test_raw_parameter(self, mock_translate, client):
+        """Test that raw=true is accepted and reflected in meta."""
+        mock_translate.return_value = {"TP53": {"P04637"}}
+        resp = client.get(
+            "/mapping/translate",
+            params={
+                "identifiers": "TP53",
+                "id_type": "genesymbol",
+                "target_id_type": "uniprot",
+                "raw": "true",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["meta"]["raw"] is True
+
+    @patch("omnipath_utils.server._routes_mapping.translate_ids")
+    def test_backend_parameter(self, mock_translate, client):
+        """Test that backend parameter is accepted and reflected in meta."""
+        mock_translate.return_value = {"TP53": {"P04637"}}
+        resp = client.get(
+            "/mapping/translate",
+            params={
+                "identifiers": "TP53",
+                "id_type": "genesymbol",
+                "target_id_type": "uniprot",
+                "backend": "biomart",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["meta"]["backend"] == "biomart"
+
+    @patch("omnipath_utils.server._routes_mapping.translate_ids")
+    def test_raw_skips_fallbacks(self, mock_translate, client):
+        """When raw=true, fallbacks should not be applied."""
+        # Only return result for exact match; lowercase should miss
+        def side_effect(session, ids, src, tgt, tax):
+            return {i: {"P04637"} for i in ids if i == "TP53"}
+
+        mock_translate.side_effect = side_effect
+
+        resp = client.get(
+            "/mapping/translate",
+            params={
+                "identifiers": "tp53",
+                "id_type": "genesymbol",
+                "target_id_type": "uniprot",
+                "raw": "true",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # In raw mode, lowercase "tp53" should remain unmapped
+        assert "tp53" in data["unmapped"]
+
+    @patch("omnipath_utils.server._routes_mapping.translate_ids")
+    def test_non_raw_applies_fallbacks(self, mock_translate, client):
+        """When raw=false (default), fallbacks should be applied."""
+        call_count = {"n": 0}
+
+        def side_effect(session, ids, src, tgt, tax):
+            call_count["n"] += 1
+            result = {}
+            for i in ids:
+                if i == "TP53":
+                    result[i] = {"P04637"}
+            return result
+
+        mock_translate.side_effect = side_effect
+
+        resp = client.get(
+            "/mapping/translate",
+            params={
+                "identifiers": "tp53",
+                "id_type": "genesymbol",
+                "target_id_type": "uniprot",
+            },
+        )
+        assert resp.status_code == 200
+        # Should have called translate_ids multiple times (fallbacks)
+        assert call_count["n"] > 1
