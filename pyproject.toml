@@ -40,7 +40,7 @@ maintainers = [
 name = "omnipath-utils"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "0.0.1"
+version = "0.1.0"
 
 [project.optional-dependencies]
 db = [
@@ -92,7 +92,7 @@ Repository = "https://github.com/saezlab/omnipath-utils"
 # ===================================
 
 [tool.bumpversion]
-current_version = "0.0.1"
+current_version = "0.1.0"
 commit = true
 tag = true
 
