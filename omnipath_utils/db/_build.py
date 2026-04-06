@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 import logging
 
@@ -279,9 +280,13 @@ class DatabaseBuilder:
         mapping_count = 0
         taxid_count = 0
 
-        # We will use two COPY streams: one for mappings, one for taxids
-        # But COPY can only target one table at a time, so we buffer taxids
-        taxid_buffer = {}
+        # Taxid assignments are written to a temp file during streaming
+        # (to avoid holding ~250M entries in memory), then loaded into
+        # the temp table in batches after the main COPY finishes.
+        import tempfile
+        taxid_file = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.tsv', delete=False, prefix='taxids_',
+        )
 
         # Start COPY for id_mapping
         ftp_types = set(type_name_to_id.keys())
@@ -296,9 +301,8 @@ class DatabaseBuilder:
                 id_types=ftp_types
             ):
                 if id_type_name == 'NCBI_TaxID':
-                    # Buffer taxonomy info
                     try:
-                        taxid_buffer[uniprot_ac] = int(id_value)
+                        taxid_file.write(f'{uniprot_ac}\t{int(id_value)}\n')
                         taxid_count += 1
                     except ValueError:
                         pass
@@ -308,11 +312,10 @@ class DatabaseBuilder:
                 if not target_type_id:
                     continue
 
-                # Insert with ncbi_tax_id=0 (will be updated later)
                 copy.write_row((
-                    uniprot_type_id,  # source is always uniprot
+                    uniprot_type_id,
                     target_type_id,
-                    0,  # ncbi_tax_id unknown for now
+                    0,  # ncbi_tax_id filled in later
                     uniprot_ac[:64],
                     id_value[:64],
                     backend_id,
@@ -321,20 +324,46 @@ class DatabaseBuilder:
 
                 if mapping_count % 10_000_000 == 0:
                     _log.info(
-                        'Inserted %dM mapping rows, %dM taxids buffered',
-                        mapping_count // 1_000_000,
-                        len(taxid_buffer) // 1_000_000,
+                        'Inserted %dM mapping rows, %d taxids written',
+                        mapping_count // 1_000_000, taxid_count,
                     )
 
         conn.commit()
-        _log.info('Inserted %d mapping rows', mapping_count)
+        taxid_file.close()
+        _log.info('Inserted %d mapping rows, %d taxids to temp file', mapping_count, taxid_count)
 
-        # Now load taxids into temp table
-        _log.info('Loading %d taxid assignments', len(taxid_buffer))
-        with cur.copy('COPY ac_taxid (ac, taxid) FROM STDIN') as copy:
-            for ac, taxid in taxid_buffer.items():
-                copy.write_row((ac, taxid))
-        conn.commit()
+        # Load taxids from temp file into temp table in batches
+        _log.info('Loading taxids from %s', taxid_file.name)
+        batch = []
+        BATCH_SIZE = 1_000_000
+        loaded = 0
+
+        with open(taxid_file.name) as f:
+            for line in f:
+                parts = line.rstrip('\n').split('\t')
+                if len(parts) == 2:
+                    batch.append((parts[0], int(parts[1])))
+                    if len(batch) >= BATCH_SIZE:
+                        with cur.copy(
+                            'COPY ac_taxid (ac, taxid) FROM STDIN'
+                        ) as taxid_copy:
+                            for row in batch:
+                                taxid_copy.write_row(row)
+                        conn.commit()
+                        loaded += len(batch)
+                        _log.info('Loaded %dM / %dM taxids', loaded // 1_000_000, taxid_count // 1_000_000)
+                        batch = []
+
+        # Flush remaining
+        if batch:
+            with cur.copy('COPY ac_taxid (ac, taxid) FROM STDIN') as taxid_copy:
+                for row in batch:
+                    taxid_copy.write_row(row)
+            conn.commit()
+            loaded += len(batch)
+
+        _log.info('Loaded all %d taxids into temp table', loaded)
+        os.unlink(taxid_file.name)
 
         # Update ncbi_tax_id in id_mapping from the temp table
         _log.info('Updating ncbi_tax_id for %d mapping rows...', mapping_count)
