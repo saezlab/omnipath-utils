@@ -12,7 +12,7 @@ Example::
     map_names(['TP53', 'EGFR'], 'genesymbol', 'uniprot')
     # {'P04637', 'P00533'}
 
-    # Translate a DataFrame column
+    # Translate a DataFrame column (pandas, polars, or pyarrow)
     import pandas as pd
     from omnipath_utils.mapping import translate_column
 
@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import Any
 from collections.abc import Iterable
+
+import narwhals as nw
 
 from omnipath_utils.mapping._mapper import Mapper
 
@@ -210,10 +212,11 @@ def translate_column(
     """Translate a column of identifiers in a DataFrame.
 
     Performs vectorized lookup using the full mapping table,
-    not per-row translation.
+    not per-row translation. Accepts any DataFrame backend
+    supported by narwhals (pandas, polars, or pyarrow).
 
     Args:
-        df: pandas DataFrame.
+        df: DataFrame (pandas, polars, or pyarrow).
         column: Column name with source IDs.
         id_type: Source ID type.
         target_id_type: Target ID type.
@@ -225,19 +228,9 @@ def translate_column(
         backend: Force a specific backend.
 
     Returns:
-        pandas DataFrame with translated column added.
-
-    Raises:
-        ImportError: If pandas is not installed.
+        DataFrame with translated column added, in the same
+        backend format as the input.
     """
-
-    try:
-        import pandas as pd
-    except ImportError:
-        raise ImportError(
-            'pandas is required for translate_column. '
-            'Install: pip install pandas'
-        ) from None
 
     from omnipath_utils.mapping._translate import translate_core
 
@@ -245,8 +238,12 @@ def translate_column(
     ncbi_tax_id = ncbi_tax_id or mapper.ncbi_tax_id
     new_col = new_column or target_id_type
 
+    nw_df = nw.from_native(df, eager_only=True)
+    native_ns = nw.get_native_namespace(nw_df)
+
     # Get unique IDs for batch translation
-    unique_ids = [str(v) for v in df[column].dropna().unique()]
+    unique_ids = nw_df[column].drop_nulls().unique().to_list()
+    unique_ids = [str(v) for v in unique_ids]
 
     trans = translate_core(
         unique_ids,
@@ -258,37 +255,73 @@ def translate_column(
     )
 
     if expand:
-        # Map each value to a list of targets
-        df = df.copy()
-        df['_targets'] = df[column].map(
-            lambda x: (
-                sorted(trans.get(x, set()))
-                if x and trans.get(x)
-                else ([None] if keep_untranslated else [])
-            )
+        # Build mapping rows: (source, target) for each pair
+        src_col_vals = []
+        tgt_col_vals = []
+
+        for src, targets in trans.items():
+            if targets:
+                for tgt in sorted(targets):
+                    src_col_vals.append(src)
+                    tgt_col_vals.append(tgt)
+            elif keep_untranslated:
+                src_col_vals.append(src)
+                tgt_col_vals.append(None)
+
+        # Handle source values not present in trans (not queried)
+        all_sources = set(unique_ids)
+        for src in all_sources - set(trans.keys()):
+            if keep_untranslated:
+                src_col_vals.append(src)
+                tgt_col_vals.append(None)
+
+        tmp_col = nw.generate_temporary_column_name(
+            n_bytes=8, columns=nw_df.columns,
         )
-        # Explode to multiple rows
-        df = df.explode('_targets').rename(
-            columns={'_targets': new_col},
+
+        mapping_native = native_ns.DataFrame(
+            {tmp_col: src_col_vals, new_col: tgt_col_vals},
         )
+        mapping_nw = nw.from_native(mapping_native, eager_only=True)
+
+        # Cast column to string for joining
+        result = nw_df.with_columns(
+            nw.col(column).cast(nw.String).alias(tmp_col),
+        )
+        result = result.join(
+            mapping_nw,
+            on=tmp_col,
+            how='left' if keep_untranslated else 'inner',
+        )
+        result = result.drop(tmp_col)
 
         if not keep_untranslated:
-            df = df.dropna(subset=[new_col])
-
-        df = df.reset_index(drop=True)
+            result = result.filter(~nw.col(new_col).is_null())
     else:
-        # Pick first result
-        df = df.copy()
-        df[new_col] = df[column].map(
-            lambda x: (
-                next(iter(trans.get(x, set()))) if x and trans.get(x) else None
-            )
+        # No expansion: pick one result per source
+        mapping = {}
+        for src, targets in trans.items():
+            if targets:
+                mapping[src] = next(iter(sorted(targets)))
+            else:
+                mapping[src] = None
+
+        values = []
+        for v in nw_df[column].to_list():
+            sv = str(v) if v is not None else None
+            values.append(mapping.get(sv) if sv else None)
+
+        new_series = nw.new_series(
+            name=new_col,
+            values=values,
+            backend=native_ns,
         )
+        result = nw_df.with_columns(new_series)
 
         if not keep_untranslated:
-            df = df.dropna(subset=[new_col])
+            result = result.filter(~nw.col(new_col).is_null())
 
-    return df
+    return nw.to_native(result)
 
 
 def translate_columns(
@@ -306,7 +339,7 @@ def translate_columns(
     or (column, id_type, target_id_type, new_column_name).
 
     Args:
-        df: pandas DataFrame.
+        df: DataFrame (pandas, polars, or pyarrow).
         *translations: Tuples defining translations.
         ncbi_tax_id: Organism (default: 9606).
         keep_untranslated: Keep rows with no translation.
@@ -315,7 +348,8 @@ def translate_columns(
         backend: Force a specific backend.
 
     Returns:
-        pandas DataFrame with all translated columns added.
+        DataFrame with all translated columns added, in the same
+        backend format as the input.
 
     Example::
 

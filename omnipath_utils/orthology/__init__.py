@@ -11,11 +11,13 @@ Example::
     translate(['TP53'], source=9606, target=10090)
     # {'TP53': {'Trp53'}}
 
-    # Translate a DataFrame column
+    # Translate a DataFrame column (pandas, polars, or pyarrow)
     translate_column(df, 'gene', source=9606, target=10090)
 """
 
 from __future__ import annotations
+
+import narwhals as nw
 
 from omnipath_utils._constants import DEFAULT_ORGANISM
 
@@ -78,8 +80,11 @@ def translate_column(
 ):
     """Translate a DataFrame column to orthologs.
 
+    Accepts any DataFrame backend supported by narwhals
+    (pandas, polars, or pyarrow).
+
     Args:
-        df: pandas DataFrame.
+        df: DataFrame (pandas, polars, or pyarrow).
         column: Column with source identifiers.
         source: Source organism.
         target: Target organism.
@@ -90,13 +95,21 @@ def translate_column(
         only_swissprot: Prefer SwissProt for UniProt IDs.
         resource: Force specific resource.
         min_sources: For HCOP, minimum supporting databases.
+
+    Returns:
+        DataFrame with ortholog column added, in the same
+        backend format as the input.
     """
-    import pandas as pd
 
     new_col = new_column or f'{column}_{target}'
 
-    # Get translation dict
-    source_ids = df[column].dropna().unique().tolist()
+    nw_df = nw.from_native(df, eager_only=True)
+    native_ns = nw.get_native_namespace(nw_df)
+
+    # Get unique source IDs
+    unique_ids = nw_df[column].drop_nulls().unique().to_list()
+    source_ids = [str(v) for v in unique_ids]
+
     trans = translate(
         source_ids,
         source=source,
@@ -108,31 +121,72 @@ def translate_column(
     )
 
     if expand:
-        df = df.copy()
-        df['_orthologs'] = df[column].map(
-            lambda x: (
-                sorted(trans.get(x, set()))
-                if x and trans.get(x)
-                else [None]
-                if keep_untranslated
-                else []
-            )
-        )
-        df = df.explode('_orthologs').rename(columns={'_orthologs': new_col})
-        if not keep_untranslated:
-            df = df.dropna(subset=[new_col])
-        df = df.reset_index(drop=True)
-    else:
-        df = df.copy()
-        df[new_col] = df[column].map(
-            lambda x: (
-                next(iter(trans.get(x, set()))) if x and trans.get(x) else None
-            )
-        )
-        if not keep_untranslated:
-            df = df.dropna(subset=[new_col])
+        # Build mapping rows
+        src_col_vals = []
+        tgt_col_vals = []
 
-    return df
+        for src, targets in trans.items():
+            if targets:
+                for tgt in sorted(targets):
+                    src_col_vals.append(src)
+                    tgt_col_vals.append(tgt)
+            elif keep_untranslated:
+                src_col_vals.append(src)
+                tgt_col_vals.append(None)
+
+        # Handle source values not in trans
+        all_sources = set(source_ids)
+        for src in all_sources - set(trans.keys()):
+            if keep_untranslated:
+                src_col_vals.append(src)
+                tgt_col_vals.append(None)
+
+        tmp_col = nw.generate_temporary_column_name(
+            n_bytes=8, columns=nw_df.columns,
+        )
+
+        mapping_native = native_ns.DataFrame(
+            {tmp_col: src_col_vals, new_col: tgt_col_vals},
+        )
+        mapping_nw = nw.from_native(mapping_native, eager_only=True)
+
+        result = nw_df.with_columns(
+            nw.col(column).cast(nw.String).alias(tmp_col),
+        )
+        result = result.join(
+            mapping_nw,
+            on=tmp_col,
+            how='left' if keep_untranslated else 'inner',
+        )
+        result = result.drop(tmp_col)
+
+        if not keep_untranslated:
+            result = result.filter(~nw.col(new_col).is_null())
+    else:
+        # No expansion: pick one result per source
+        mapping = {}
+        for src, targets in trans.items():
+            if targets:
+                mapping[src] = next(iter(sorted(targets)))
+            else:
+                mapping[src] = None
+
+        values = []
+        for v in nw_df[column].to_list():
+            sv = str(v) if v is not None else None
+            values.append(mapping.get(sv) if sv else None)
+
+        new_series = nw.new_series(
+            name=new_col,
+            values=values,
+            backend=native_ns,
+        )
+        result = nw_df.with_columns(new_series)
+
+        if not keep_untranslated:
+            result = result.filter(~nw.col(new_col).is_null())
+
+    return nw.to_native(result)
 
 
 def get_table(
