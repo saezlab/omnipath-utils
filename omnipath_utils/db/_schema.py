@@ -51,7 +51,7 @@ class Organism(Base):
     __table_args__ = {'schema': 'omnipath_utils'}
 
     ncbi_tax_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    latin_name: Mapped[str | None] = mapped_column(String(128))
+    latin_name: Mapped[str | None] = mapped_column(String(256))
     common_name: Mapped[str | None] = mapped_column(String(64))
     short_latin: Mapped[str | None] = mapped_column(String(64))
     ensembl_name: Mapped[str | None] = mapped_column(String(64))
