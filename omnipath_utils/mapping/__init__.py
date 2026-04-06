@@ -32,12 +32,32 @@ def map_name(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int | None = None,
+    strict: bool = False,
+    raw: bool = False,
+    backend: str | None = None,
 ) -> set[str]:
-    """Translate a single identifier."""
+    """Translate a single identifier.
 
-    return Mapper.get().map_name(
-        name, id_type, target_id_type, ncbi_tax_id,
+    Args:
+        name: The identifier to translate.
+        id_type: Source ID type (e.g. 'genesymbol').
+        target_id_type: Target ID type (e.g. 'uniprot').
+        ncbi_tax_id: Organism (default: 9606).
+        strict: Skip fuzzy fallbacks (gene symbol case, append "1", etc.).
+        raw: Skip special-case handling. Direct table lookup only.
+        backend: Force a specific backend (e.g. 'uniprot', 'biomart').
+
+    Returns:
+        Set of target identifiers.
+    """
+
+    from omnipath_utils.mapping._translate import translate_core
+
+    result = translate_core(
+        [name], id_type, target_id_type, ncbi_tax_id,
+        strict=strict, raw=raw, backend=backend,
     )
+    return result.get(name, set())
 
 
 def map_names(
@@ -45,12 +65,33 @@ def map_names(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int | None = None,
+    raw: bool = False,
+    backend: str | None = None,
 ) -> set[str]:
-    """Translate multiple identifiers, return union of results."""
+    """Translate multiple identifiers, return union of results.
 
-    return Mapper.get().map_names(
-        names, id_type, target_id_type, ncbi_tax_id,
+    Args:
+        names: Iterable of identifiers.
+        id_type: Source ID type.
+        target_id_type: Target ID type.
+        ncbi_tax_id: Organism (default: 9606).
+        raw: Skip special-case handling. Direct table lookup only.
+        backend: Force a specific backend.
+
+    Returns:
+        Union of all target identifiers.
+    """
+
+    from omnipath_utils.mapping._translate import translate_core
+
+    result = translate_core(
+        list(names), id_type, target_id_type, ncbi_tax_id,
+        raw=raw, backend=backend,
     )
+    merged = set()
+    for targets in result.values():
+        merged.update(targets)
+    return merged
 
 
 def map_name0(
@@ -58,12 +99,28 @@ def map_name0(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int | None = None,
+    raw: bool = False,
+    backend: str | None = None,
 ) -> str | None:
-    """Translate, returning a single result."""
+    """Translate, returning a single result.
 
-    return Mapper.get().map_name0(
+    Args:
+        name: The identifier to translate.
+        id_type: Source ID type.
+        target_id_type: Target ID type.
+        ncbi_tax_id: Organism (default: 9606).
+        raw: Skip special-case handling.
+        backend: Force a specific backend.
+
+    Returns:
+        A single target identifier, or None.
+    """
+
+    result = map_name(
         name, id_type, target_id_type, ncbi_tax_id,
+        raw=raw, backend=backend,
     )
+    return next(iter(result)) if result else None
 
 
 def translate(
@@ -71,34 +128,33 @@ def translate(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int | None = None,
+    raw: bool = False,
+    backend: str | None = None,
 ) -> dict[str, set[str]]:
     """Batch translate. Returns dict mapping source -> set of targets.
 
     Uses vectorized table lookup when available. Falls back to per-ID
     map_name (with full special-case handling) when the table is not
     available.
+
+    Args:
+        identifiers: Iterable of source identifiers.
+        id_type: Source ID type.
+        target_id_type: Target ID type.
+        ncbi_tax_id: Organism (default: 9606).
+        raw: Skip special-case handling. Direct table lookup only.
+        backend: Force a specific backend.
+
+    Returns:
+        Dict mapping each source ID to a set of target IDs.
     """
 
-    mapper = Mapper.get()
-    ncbi_tax_id = ncbi_tax_id or mapper.ncbi_tax_id
-    id_type_r = mapper._id_types.resolve(id_type) or id_type
-    target_r = (
-        mapper._id_types.resolve(target_id_type) or target_id_type
+    from omnipath_utils.mapping._translate import translate_core
+
+    return translate_core(
+        list(identifiers), id_type, target_id_type, ncbi_tax_id,
+        raw=raw, backend=backend,
     )
-
-    # Try vectorized: get table and do dict lookups
-    table = mapper.which_table(id_type_r, target_r, ncbi_tax_id)
-
-    if table:
-        return {name: table[name] for name in identifiers}
-
-    # Fallback: per-ID with full special-case handling
-    return {
-        name: mapper.map_name(
-            name, id_type, target_id_type, ncbi_tax_id,
-        )
-        for name in identifiers
-    }
 
 
 def translation_table(
@@ -128,6 +184,8 @@ def translate_column(
     new_column: str | None = None,
     keep_untranslated: bool = True,
     expand: bool = True,
+    raw: bool = False,
+    backend: str | None = None,
 ) -> Any:
     """Translate a column of identifiers in a DataFrame.
 
@@ -143,6 +201,8 @@ def translate_column(
         new_column: Output column name (default: target_id_type).
         keep_untranslated: Keep rows with no translation (default: True).
         expand: Expand one-to-many to multiple rows (default: True).
+        raw: Skip special-case handling. Direct table lookup only.
+        backend: Force a specific backend.
 
     Returns:
         pandas DataFrame with translated column added.
@@ -159,16 +219,21 @@ def translate_column(
             'Install: pip install pandas'
         )
 
+    from omnipath_utils.mapping._translate import translate_core
+
     mapper = Mapper.get()
     ncbi_tax_id = ncbi_tax_id or mapper.ncbi_tax_id
     new_col = new_column or target_id_type
-    id_type_r = mapper._id_types.resolve(id_type) or id_type
-    target_r = (
-        mapper._id_types.resolve(target_id_type) or target_id_type
-    )
 
-    # Vectorized: get the full translation table once
-    trans = mapper.translation_table(id_type_r, target_r, ncbi_tax_id)
+    # Get unique IDs for batch translation
+    unique_ids = [
+        str(v) for v in df[column].dropna().unique()
+    ]
+
+    trans = translate_core(
+        unique_ids, id_type, target_id_type, ncbi_tax_id,
+        raw=raw, backend=backend,
+    )
 
     if expand:
         # Map each value to a list of targets
@@ -208,6 +273,8 @@ def translate_columns(
     ncbi_tax_id: int | None = None,
     keep_untranslated: bool = True,
     expand: bool = True,
+    raw: bool = False,
+    backend: str | None = None,
 ) -> Any:
     """Translate multiple columns in a DataFrame.
 
@@ -220,6 +287,8 @@ def translate_columns(
         ncbi_tax_id: Organism (default: 9606).
         keep_untranslated: Keep rows with no translation.
         expand: Expand one-to-many mappings.
+        raw: Skip special-case handling. Direct table lookup only.
+        backend: Force a specific backend.
 
     Returns:
         pandas DataFrame with all translated columns added.
@@ -242,6 +311,8 @@ def translate_columns(
             new_column=new_col,
             keep_untranslated=keep_untranslated,
             expand=expand,
+            raw=raw,
+            backend=backend,
         )
 
     return df

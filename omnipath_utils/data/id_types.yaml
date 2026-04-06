@@ -954,3 +954,12 @@ phalanx:
   backends: {}
   aliases:
     - phalanx_id
+
+mirbase:
+  label: miRBase Accession
+  entity_type: mirna
+  curie_prefix: mirbase
+  backends: {}
+  aliases:
+    - mirbase_ac
+    - mirbase_accession

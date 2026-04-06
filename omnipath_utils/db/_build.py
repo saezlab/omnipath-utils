@@ -181,6 +181,76 @@ class DatabaseBuilder:
             id_type, target_id_type, row_count, duration,
         )
 
+    def populate_reflists(self, ncbi_tax_id: int):
+        """Populate reference lists for an organism.
+
+        Loads SwissProt and TrEMBL ID sets via the reflists module and
+        bulk-inserts them into the reflist table using COPY.
+        """
+        from omnipath_utils.reflists import all_swissprots, all_trembls
+        from omnipath_utils.db._connection import get_connection
+
+        start = time.time()
+
+        with Session(self.engine) as session:
+            uniprot_type = session.query(IdType).filter_by(name='uniprot').first()
+            if not uniprot_type:
+                _log.error('ID type "uniprot" not found, skipping reflists')
+                return
+            type_id = uniprot_type.id
+
+        conn = get_connection(self._db_url)
+        cur = conn.cursor()
+
+        # Clear existing for this organism
+        cur.execute(
+            f'DELETE FROM {SCHEMA}.reflist WHERE ncbi_tax_id = %s',
+            (ncbi_tax_id,),
+        )
+        conn.commit()
+
+        total_rows = 0
+
+        for list_name, loader in [('swissprot', all_swissprots), ('trembl', all_trembls)]:
+            ids = loader(ncbi_tax_id)
+            _log.info(
+                'Loading %d %s IDs for organism %d',
+                len(ids), list_name, ncbi_tax_id,
+            )
+
+            with cur.copy(
+                f'COPY {SCHEMA}.reflist'
+                ' (identifier, id_type_id, ncbi_tax_id, list_name)'
+                ' FROM STDIN'
+            ) as copy:
+                for ac in ids:
+                    copy.write_row((ac, type_id, ncbi_tax_id, list_name))
+
+            conn.commit()
+            total_rows += len(ids)
+
+        duration = time.time() - start
+
+        # Record build info
+        with Session(self.engine) as session:
+            session.add(BuildInfo(
+                table_name='reflist',
+                source_type='uniprot',
+                target_type=None,
+                ncbi_tax_id=ncbi_tax_id,
+                backend=None,
+                row_count=total_rows,
+                duration_secs=duration,
+                status='done',
+            ))
+            session.commit()
+
+        conn.close()
+        _log.info(
+            'Reflists for organism %d: %d rows in %.1fs',
+            ncbi_tax_id, total_rows, duration,
+        )
+
     def build_reference_tables(self):
         """Build all reference tables (id_types, backends, organisms)."""
         self.create_tables()
@@ -189,18 +259,44 @@ class DatabaseBuilder:
         self.populate_organisms()
 
     def build_all(self, organisms: list[int] | None = None):
-        """Full build: reference tables + mappings for specified organisms."""
+        """Full build: reference tables + mappings + reflists.
+
+        Mapping pairs cover all tables needed for the special-case
+        cleanup pipeline:
+
+        - Core protein mappings (genesymbol, entrez, hgnc, refseqp)
+        - SwissProt/TrEMBL specific tables (for cleanup pipeline)
+        - Gene symbol synonyms
+        - Ensembl mappings (ensg, ensp, enst)
+
+        Note: uniprot-sec -> uniprot-pri is skipped here because it has
+        no backend column; that table requires a dedicated loader from
+        UniProt sec_ac.txt or the FTP idmapping file.  The cleanup
+        pipeline works without it (the secondary -> primary step is
+        simply skipped).
+        """
         self.build_reference_tables()
 
         organisms = organisms or [9606]  # default: human only
 
         # Build key mappings for each organism
         mapping_pairs = [
+            # Core protein mappings
             ('genesymbol', 'uniprot', 'uniprot'),
             ('entrez', 'uniprot', 'uniprot'),
+            ('hgnc', 'uniprot', 'uniprot'),
+            ('refseqp', 'uniprot', 'uniprot'),
+            # SwissProt/TrEMBL specific (for cleanup pipeline)
+            ('genesymbol', 'swissprot', 'uniprot'),
+            ('trembl', 'genesymbol', 'uniprot'),
+            # Gene symbol synonyms
+            ('genesymbol-syn', 'uniprot', 'uniprot'),
+            # Ensembl mappings
             ('ensg', 'genesymbol', 'biomart'),
             ('ensp', 'ensg', 'biomart'),
             ('enst', 'ensg', 'biomart'),
+            ('ensp', 'uniprot', 'biomart'),
+            # TODO: uniprot-sec -> uniprot-pri (needs dedicated loader)
         ]
 
         for src, tgt, backend in mapping_pairs:
@@ -209,6 +305,13 @@ class DatabaseBuilder:
                     self.populate_mapping(src, tgt, org, backend)
                 except Exception as e:
                     _log.error('Failed: %s -> %s (org %d): %s', src, tgt, org, e)
+
+        # Reference lists
+        for org in organisms:
+            try:
+                self.populate_reflists(org)
+            except Exception as e:
+                _log.error('Failed reflists for org %d: %s', org, e)
 
     def populate_from_ftp(self, id_types: set[str] | None = None):
         """Populate id_mapping table from the full UniProt FTP idmapping file.

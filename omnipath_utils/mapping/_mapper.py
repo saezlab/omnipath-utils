@@ -350,19 +350,30 @@ class Mapper:
         target_id_type: str,
         ncbi_tax_id: int | None = None,
         load: bool = True,
+        backend: str | None = None,
     ) -> MappingTable | None:
-        """Find or load the appropriate mapping table."""
+        """Find or load the appropriate mapping table.
+
+        Args:
+            id_type: Source ID type.
+            target_id_type: Target ID type.
+            ncbi_tax_id: Organism.
+            load: If True, attempt to load from backends when not cached.
+            backend: Force a specific backend. None = auto-select.
+        """
 
         ncbi_tax_id = ncbi_tax_id or self.ncbi_tax_id
         key = MappingTableKey(id_type, target_id_type, ncbi_tax_id)
 
-        if key in self.tables:
+        if not backend and key in self.tables:
             return self.tables[key]
 
         if not load:
             return None
 
-        table = self._load_table(id_type, target_id_type, ncbi_tax_id)
+        table = self._load_table(
+            id_type, target_id_type, ncbi_tax_id, backend=backend,
+        )
 
         if table:
             self.tables[key] = table
@@ -374,10 +385,21 @@ class Mapper:
         id_type: str,
         target_id_type: str,
         ncbi_tax_id: int,
+        backend: str | None = None,
     ) -> MappingTable | None:
-        """Try loading a table from available backends."""
+        """Try loading a table from available backends.
 
-        backends = self._find_backends(id_type, target_id_type)
+        Args:
+            id_type: Source ID type.
+            target_id_type: Target ID type.
+            ncbi_tax_id: Organism.
+            backend: Force a specific backend. None = try all.
+        """
+
+        if backend:
+            backends = [backend]
+        else:
+            backends = self._find_backends(id_type, target_id_type)
 
         for backend_name in backends:
             try:
