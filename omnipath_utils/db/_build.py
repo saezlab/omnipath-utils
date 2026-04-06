@@ -312,13 +312,9 @@ class DatabaseBuilder:
     def build_all(self, organisms: list[int] | None = None):
         """Full build: reference tables + mappings + reflists.
 
-        Mapping pairs cover all tables needed for the special-case
-        cleanup pipeline:
-
-        - Core protein mappings (genesymbol, entrez, hgnc, refseqp)
-        - SwissProt/TrEMBL specific tables (for cleanup pipeline)
-        - Gene symbol synonyms
-        - Ensembl mappings (ensg, ensp, enst)
+        Uses preset infrastructure internally. Equivalent to a custom
+        preset with the given organisms, protein core + Ensembl mappings,
+        and reference lists.
 
         Note: uniprot-sec -> uniprot-pri is skipped here because it has
         no backend column; that table requires a dedicated loader from
@@ -326,31 +322,13 @@ class DatabaseBuilder:
         pipeline works without it (the secondary -> primary step is
         simply skipped).
         """
+        from omnipath_utils.db._presets import PROTEIN_CORE, ENSEMBL
+
         self.build_reference_tables()
 
         organisms = organisms or [9606]  # default: human only
 
-        # Build key mappings for each organism
-        mapping_pairs = [
-            # Core protein mappings
-            ('genesymbol', 'uniprot', 'uniprot'),
-            ('entrez', 'uniprot', 'uniprot'),
-            ('hgnc', 'uniprot', 'uniprot'),
-            ('refseqp', 'uniprot', 'uniprot'),
-            # SwissProt/TrEMBL specific (for cleanup pipeline)
-            ('genesymbol', 'swissprot', 'uniprot'),
-            ('trembl', 'genesymbol', 'uniprot'),
-            # Gene symbol synonyms
-            ('genesymbol-syn', 'uniprot', 'uniprot'),
-            # Ensembl mappings
-            ('ensg', 'genesymbol', 'biomart'),
-            ('ensp', 'ensg', 'biomart'),
-            ('enst', 'ensg', 'biomart'),
-            ('ensp', 'uniprot', 'biomart'),
-            # TODO: uniprot-sec -> uniprot-pri (needs dedicated loader)
-        ]
-
-        for src, tgt, backend in mapping_pairs:
+        for src, tgt, backend in PROTEIN_CORE + ENSEMBL:
             for org in organisms:
                 try:
                     self.populate_mapping(src, tgt, org, backend)
@@ -592,3 +570,225 @@ class DatabaseBuilder:
             session.commit()
 
         conn.close()
+
+    def export_parquet(self, tables: list[tuple], output_dir: str):
+        """Export mapping tables as Parquet files for fast API delivery."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        from omnipath_utils.db._query import get_full_table
+
+        for src_type, tgt_type, ncbi_tax_id in tables:
+            with Session(self.engine) as session:
+                data = get_full_table(
+                    session, src_type, tgt_type, ncbi_tax_id
+                )
+
+            if not data:
+                _log.warning(
+                    "No data for %s -> %s (org %d), skipping Parquet",
+                    src_type,
+                    tgt_type,
+                    ncbi_tax_id,
+                )
+                continue
+
+            # Convert to flat rows for Parquet
+            rows = [
+                (k, v) for k, targets in data.items() for v in targets
+            ]
+            if not rows:
+                continue
+
+            table = pa.table(
+                {
+                    src_type: [r[0] for r in rows],
+                    tgt_type: [r[1] for r in rows],
+                }
+            )
+
+            fname = f"{src_type}__{tgt_type}__{ncbi_tax_id}.parquet"
+            path = os.path.join(output_dir, fname)
+            pq.write_table(table, path, compression="snappy")
+            _log.info("Exported %s: %d rows", fname, len(rows))
+
+    def populate_metabolites(self):
+        """Populate metabolite ID mappings (not organism-specific)."""
+        for src, tgt in [
+            ("chembl", "chebi"),
+            ("drugbank", "chebi"),
+            ("pubchem", "chebi"),
+        ]:
+            try:
+                self.populate_mapping(src, tgt, 0, "unichem")
+            except Exception as e:
+                _log.error("UniChem %s -> %s failed: %s", src, tgt, e)
+
+        for src, tgt in [
+            ("hmdb", "chebi"),
+            ("kegg", "chebi"),
+            ("pubchem", "chebi"),
+        ]:
+            try:
+                self.populate_mapping(src, tgt, 0, "ramp")
+            except Exception as e:
+                _log.error("RaMP %s -> %s failed: %s", src, tgt, e)
+
+    def populate_mirna(self, organisms: list[int]):
+        """Populate miRNA ID mappings."""
+        for org in organisms:
+            for src, tgt in [
+                ("mir-pre", "mirbase"),
+                ("mir-mat-name", "mirbase"),
+            ]:
+                try:
+                    self.populate_mapping(src, tgt, org, "mirbase")
+                except Exception as e:
+                    _log.error(
+                        "miRBase %s -> %s (org %d) failed: %s",
+                        src,
+                        tgt,
+                        org,
+                        e,
+                    )
+
+    def populate_orthology(self, organisms: list[int]):
+        """Populate orthology tables for organism pairs."""
+        source = 9606  # human as source
+
+        from omnipath_utils.db._connection import get_connection
+        from omnipath_utils.orthology._manager import OrthologyManager
+
+        for target in organisms:
+            if target == source:
+                continue
+
+            _log.info("Building orthology: %d -> %d", source, target)
+
+            mgr = OrthologyManager()
+            try:
+                table = mgr._get_table(
+                    source,
+                    target,
+                    "genesymbol",
+                    resource="hcop",
+                    min_sources=1,
+                )
+                if not table:
+                    _log.warning(
+                        "No orthology data for %d -> %d", source, target
+                    )
+                    continue
+
+                conn = get_connection(self._db_url)
+                cur = conn.cursor()
+
+                # Delete existing
+                cur.execute(
+                    f"DELETE FROM {SCHEMA}.orthology"
+                    " WHERE source_tax_id = %s AND target_tax_id = %s",
+                    (source, target),
+                )
+                conn.commit()
+
+                row_count = 0
+                with cur.copy(
+                    f"COPY {SCHEMA}.orthology"
+                    " (source_id, target_id, source_tax_id, target_tax_id,"
+                    " id_type, resource, n_sources, support)"
+                    " FROM STDIN"
+                ) as copy:
+                    for src_id, target_ids in table.data.items():
+                        for tgt_id in target_ids:
+                            meta = table.metadata.get(src_id, {}).get(
+                                tgt_id, {}
+                            )
+                            copy.write_row(
+                                (
+                                    src_id[:64],
+                                    tgt_id[:64],
+                                    source,
+                                    target,
+                                    "genesymbol",
+                                    "hcop",
+                                    meta.get("n_sources"),
+                                    meta.get("support", "")[:500],
+                                )
+                            )
+                            row_count += 1
+
+                conn.commit()
+                conn.close()
+                _log.info(
+                    "Orthology %d -> %d: %d pairs",
+                    source,
+                    target,
+                    row_count,
+                )
+
+            except Exception as e:
+                _log.error(
+                    "Orthology %d -> %d failed: %s", source, target, e
+                )
+
+    def build_preset(self, preset: str, parquet_dir: str | None = None):
+        """Build using a named preset."""
+        from omnipath_utils.db._presets import PRESETS, PARQUET_TABLES
+
+        if preset not in PRESETS:
+            raise ValueError(
+                f"Unknown preset: {preset}. "
+                f"Available: {list(PRESETS.keys())}"
+            )
+
+        config = PRESETS[preset]
+        _log.info(
+            "Building preset \"%s\": %s", preset, config["description"]
+        )
+
+        self.build_reference_tables()
+
+        organisms = config["organisms"] or [9606]
+
+        if config.get("ftp"):
+            self.populate_from_ftp()
+        else:
+            for src, tgt, backend in config["mappings"]:
+                for org in organisms:
+                    try:
+                        self.populate_mapping(src, tgt, org, backend)
+                    except Exception as e:
+                        _log.error(
+                            "Failed: %s -> %s (org %d): %s",
+                            src,
+                            tgt,
+                            org,
+                            e,
+                        )
+
+        if config.get("metabolite"):
+            self.populate_metabolites()
+
+        if config.get("mirna"):
+            self.populate_mirna(organisms)
+
+        if config.get("orthology"):
+            self.populate_orthology(organisms)
+
+        if config.get("reflists"):
+            for org in organisms:
+                try:
+                    self.populate_reflists(org)
+                except Exception as e:
+                    _log.error("Failed reflists org %d: %s", org, e)
+
+        # Export Parquet files
+        if parquet_dir:
+            tables = PARQUET_TABLES.get(
+                preset, PARQUET_TABLES.get("minimal", [])
+            )
+            self.export_parquet(tables, parquet_dir)
+
+        _log.info("Preset \"%s\" build complete", preset)
