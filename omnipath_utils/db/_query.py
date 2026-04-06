@@ -187,3 +187,57 @@ def get_all_mappings(
         result.setdefault(src_id, {}).setdefault(tgt_type, []).append(tgt_id)
 
     return result
+
+
+def chain_translate(
+    session: Session,
+    identifiers: list[str],
+    source_type: str,
+    target_type: str,
+    ncbi_tax_id: int,
+    via: str = 'uniprot',
+) -> tuple[dict[str, set[str]], set[str]]:
+    """Chain translation: source -> via -> target, all in the DB.
+
+    Uses two JOINs to find: source_id -> via_id -> target_id.
+    Returns (result_dict, backends_used).
+    """
+    from collections import defaultdict
+
+    result = defaultdict(set)
+    backends_used = set()
+
+    rows = session.execute(
+        text(f"""
+            SELECT m1.source_id, m2.target_id, b1.name, b2.name
+            FROM {SCHEMA}.id_mapping m1
+            JOIN {SCHEMA}.id_type st1 ON m1.source_type_id = st1.id
+            JOIN {SCHEMA}.id_type vt ON m1.target_type_id = vt.id
+            JOIN {SCHEMA}.id_mapping m2 ON m1.target_id = m2.source_id
+                AND m2.ncbi_tax_id = m1.ncbi_tax_id
+            JOIN {SCHEMA}.id_type st2 ON m2.source_type_id = st2.id
+            JOIN {SCHEMA}.id_type tt2 ON m2.target_type_id = tt2.id
+            JOIN {SCHEMA}.backend b1 ON m1.backend_id = b1.id
+            JOIN {SCHEMA}.backend b2 ON m2.backend_id = b2.id
+            WHERE st1.name = :src_type
+            AND vt.name = :via_type
+            AND st2.name = :via_type
+            AND tt2.name = :tgt_type
+            AND m1.source_id = ANY(:ids)
+            AND (m1.ncbi_tax_id = :tax OR m1.ncbi_tax_id = 0)
+            AND (m2.ncbi_tax_id = :tax OR m2.ncbi_tax_id = 0)
+        """),
+        {
+            'src_type': source_type,
+            'via_type': via,
+            'tgt_type': target_type,
+            'tax': ncbi_tax_id,
+            'ids': identifiers,
+        },
+    ).fetchall()
+
+    for row in rows:
+        result[row[0]].add(row[1])
+        backends_used.add(f'{row[2]}+{row[3]}')
+
+    return dict(result), backends_used

@@ -11,6 +11,7 @@ from litestar.params import Parameter
 from omnipath_utils.db._query import (
     identify_ids,
     translate_ids,
+    chain_translate,
     get_all_mappings,
 )
 
@@ -157,27 +158,17 @@ def _apply_fallbacks(
         and id_type_resolved != 'uniprot'
         and target_resolved != 'uniprot'
     ):
-        intermediate, _ib = translate_ids(
+        chain_result, chain_backends = chain_translate(
             session,
             still_unmapped,
             id_type_resolved,
-            'uniprot',
+            target_resolved,
             ncbi_tax_id,
+            via='uniprot',
         )
-        for src, uniprots in intermediate.items():
-            if uniprots:
-                final, _fb = translate_ids(
-                    session,
-                    list(uniprots),
-                    'uniprot',
-                    target_resolved,
-                    ncbi_tax_id,
-                )
-                targets = set()
-                for t in final.values():
-                    targets.update(t)
-                if targets:
-                    result[src] = targets
+        for src, targets in chain_result.items():
+            if targets:
+                result[src] = targets
 
     return result
 

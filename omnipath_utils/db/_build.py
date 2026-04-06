@@ -322,7 +322,7 @@ class DatabaseBuilder:
         pipeline works without it (the secondary -> primary step is
         simply skipped).
         """
-        from omnipath_utils.db._presets import PROTEIN_CORE, ENSEMBL
+        from omnipath_utils.db._presets import ENSEMBL, PROTEIN_CORE
 
         self.build_reference_tables()
 
@@ -588,7 +588,7 @@ class DatabaseBuilder:
 
             if not data:
                 _log.warning(
-                    "No data for %s -> %s (org %d), skipping Parquet",
+                    'No data for %s -> %s (org %d), skipping Parquet',
                     src_type,
                     tgt_type,
                     ncbi_tax_id,
@@ -609,10 +609,10 @@ class DatabaseBuilder:
                 }
             )
 
-            fname = f"{src_type}__{tgt_type}__{ncbi_tax_id}.parquet"
+            fname = f'{src_type}__{tgt_type}__{ncbi_tax_id}.parquet'
             path = os.path.join(output_dir, fname)
-            pq.write_table(table, path, compression="snappy")
-            _log.info("Exported %s: %d rows", fname, len(rows))
+            pq.write_table(table, path, compression='snappy')
+            _log.info('Exported %s: %d rows', fname, len(rows))
 
     def populate_metabolites(self):
         """Populate metabolite ID mappings from UniChem and RaMP.
@@ -979,14 +979,14 @@ class DatabaseBuilder:
         """Populate miRNA ID mappings."""
         for org in organisms:
             for src, tgt in [
-                ("mir-pre", "mirbase"),
-                ("mir-mat-name", "mirbase"),
+                ('mir-pre', 'mirbase'),
+                ('mir-mat-name', 'mirbase'),
             ]:
                 try:
-                    self.populate_mapping(src, tgt, org, "mirbase")
+                    self.populate_mapping(src, tgt, org, 'mirbase')
                 except Exception as e:
                     _log.error(
-                        "miRBase %s -> %s (org %d) failed: %s",
+                        'miRBase %s -> %s (org %d) failed: %s',
                         src,
                         tgt,
                         org,
@@ -1004,20 +1004,20 @@ class DatabaseBuilder:
             if target == source:
                 continue
 
-            _log.info("Building orthology: %d -> %d", source, target)
+            _log.info('Building orthology: %d -> %d', source, target)
 
             mgr = OrthologyManager()
             try:
                 table = mgr._get_table(
                     source,
                     target,
-                    "genesymbol",
-                    resource="hcop",
+                    'genesymbol',
+                    resource='hcop',
                     min_sources=1,
                 )
                 if not table:
                     _log.warning(
-                        "No orthology data for %d -> %d", source, target
+                        'No orthology data for %d -> %d', source, target
                     )
                     continue
 
@@ -1026,18 +1026,18 @@ class DatabaseBuilder:
 
                 # Delete existing
                 cur.execute(
-                    f"DELETE FROM {SCHEMA}.orthology"
-                    " WHERE source_tax_id = %s AND target_tax_id = %s",
+                    f'DELETE FROM {SCHEMA}.orthology'
+                    ' WHERE source_tax_id = %s AND target_tax_id = %s',
                     (source, target),
                 )
                 conn.commit()
 
                 row_count = 0
                 with cur.copy(
-                    f"COPY {SCHEMA}.orthology"
-                    " (source_id, target_id, source_tax_id, target_tax_id,"
-                    " id_type, resource, n_sources, support)"
-                    " FROM STDIN"
+                    f'COPY {SCHEMA}.orthology'
+                    ' (source_id, target_id, source_tax_id, target_tax_id,'
+                    ' id_type, resource, n_sources, support)'
+                    ' FROM STDIN'
                 ) as copy:
                     for src_id, target_ids in table.data.items():
                         for tgt_id in target_ids:
@@ -1050,10 +1050,10 @@ class DatabaseBuilder:
                                     tgt_id[:64],
                                     source,
                                     target,
-                                    "genesymbol",
-                                    "hcop",
-                                    meta.get("n_sources"),
-                                    meta.get("support", "")[:500],
+                                    'genesymbol',
+                                    'hcop',
+                                    meta.get('n_sources'),
+                                    meta.get('support', '')[:500],
                                 )
                             )
                             row_count += 1
@@ -1061,7 +1061,7 @@ class DatabaseBuilder:
                 conn.commit()
                 conn.close()
                 _log.info(
-                    "Orthology %d -> %d: %d pairs",
+                    'Orthology %d -> %d: %d pairs',
                     source,
                     target,
                     row_count,
@@ -1069,7 +1069,7 @@ class DatabaseBuilder:
 
             except Exception as e:
                 _log.error(
-                    "Orthology %d -> %d failed: %s", source, target, e
+                    'Orthology %d -> %d failed: %s', source, target, e
                 )
 
     def build_preset(self, preset: str, parquet_dir: str | None = None):
@@ -1078,56 +1078,56 @@ class DatabaseBuilder:
 
         if preset not in PRESETS:
             raise ValueError(
-                f"Unknown preset: {preset}. "
-                f"Available: {list(PRESETS.keys())}"
+                f'Unknown preset: {preset}. '
+                f'Available: {list(PRESETS.keys())}'
             )
 
         config = PRESETS[preset]
         _log.info(
-            "Building preset \"%s\": %s", preset, config["description"]
+            'Building preset "%s": %s', preset, config['description']
         )
 
         self.build_reference_tables()
 
-        organisms = config["organisms"] or [9606]
+        organisms = config['organisms'] or [9606]
 
-        if config.get("ftp"):
+        if config.get('ftp'):
             self.populate_from_ftp()
         else:
-            for src, tgt, backend in config["mappings"]:
+            for src, tgt, backend in config['mappings']:
                 for org in organisms:
                     try:
                         self.populate_mapping(src, tgt, org, backend)
                     except Exception as e:
                         _log.error(
-                            "Failed: %s -> %s (org %d): %s",
+                            'Failed: %s -> %s (org %d): %s',
                             src,
                             tgt,
                             org,
                             e,
                         )
 
-        if config.get("metabolite"):
+        if config.get('metabolite'):
             self.populate_metabolites()
 
-        if config.get("mirna"):
+        if config.get('mirna'):
             self.populate_mirna(organisms)
 
-        if config.get("orthology"):
+        if config.get('orthology'):
             self.populate_orthology(organisms)
 
-        if config.get("reflists"):
+        if config.get('reflists'):
             for org in organisms:
                 try:
                     self.populate_reflists(org)
                 except Exception as e:
-                    _log.error("Failed reflists org %d: %s", org, e)
+                    _log.error('Failed reflists org %d: %s', org, e)
 
         # Export Parquet files
         if parquet_dir:
             tables = PARQUET_TABLES.get(
-                preset, PARQUET_TABLES.get("minimal", [])
+                preset, PARQUET_TABLES.get('minimal', [])
             )
             self.export_parquet(tables, parquet_dir)
 
-        _log.info("Preset \"%s\" build complete", preset)
+        _log.info('Preset "%s" build complete', preset)

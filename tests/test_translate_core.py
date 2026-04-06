@@ -354,6 +354,9 @@ class TestRESTFallbacks:
         with patch(
             'omnipath_utils.server._routes_mapping.translate_ids',
             side_effect=mock_translate_ids,
+        ), patch(
+            'omnipath_utils.server._routes_mapping.chain_translate',
+            return_value=({'7157': {'TP53'}}, {'uniprot+uniprot'}),
         ):
             result = {}
             result = _apply_fallbacks(
