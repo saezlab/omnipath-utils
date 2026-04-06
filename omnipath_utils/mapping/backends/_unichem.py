@@ -9,6 +9,29 @@ from omnipath_utils.mapping.backends._base import MappingBackend
 
 _log = logging.getLogger(__name__)
 
+# Map our canonical names to UniChem source labels used by pypath.
+# UniChem labels are case-sensitive; pypath uses the label field
+# returned by the UniChem REST API.
+_UNICHEM_LABELS: dict[str, str] = {
+    'chembl': 'ChEMBL',
+    'chebi': 'ChEBI',
+    'drugbank': 'DrugBank',
+    'pubchem': 'PubChem',
+    'hmdb': 'HMDB',
+    'kegg': 'KEGG Ligand',
+    'lipidmaps': 'LIPID MAPS®',
+    'surechembl': 'SureChEMBL',
+    'swisslipids': 'SwissLipids',
+    'brenda': 'Brenda',
+    'rhea': 'Rhea',
+    'pdb': 'PDBe',
+}
+
+
+def _to_unichem_label(name: str) -> str:
+    """Convert our canonical name to a UniChem label for pypath."""
+    return _UNICHEM_LABELS.get(name, name)
+
 
 class UniChemBackend(MappingBackend):
     name = 'unichem'
@@ -25,10 +48,13 @@ class UniChemBackend(MappingBackend):
     def _read_via_pypath(self, id_type, target_id_type, ncbi_tax_id, **kwargs):
         from pypath.inputs.unichem import unichem_mapping
 
-        _log.info('UniChem: %s -> %s', id_type, target_id_type)
+        label_a = _to_unichem_label(id_type)
+        label_b = _to_unichem_label(target_id_type)
+
+        _log.info('UniChem: %s (%s) -> %s (%s)', id_type, label_a, target_id_type, label_b)
 
         try:
-            data = unichem_mapping(id_type, target_id_type)
+            data = unichem_mapping(label_a, label_b)
         except (ValueError, KeyError) as e:
             _log.debug('UniChem: %s', e)
             return {}
