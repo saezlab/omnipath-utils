@@ -72,6 +72,11 @@ class TaxonomyManager:
                 if val:
                     self._to_taxid[val.lower()] = taxid
 
+            # Index synonyms
+            for syn in info.get('synonyms', []):
+                if syn:
+                    self._to_taxid[syn.lower()] = taxid
+
             # Also index the taxid as string
             self._to_taxid[str(taxid)] = taxid
 
@@ -83,7 +88,7 @@ class TaxonomyManager:
                 Organism name or NCBI Taxonomy ID in any supported
                 form: common name, latin name, Ensembl name, KEGG
                 code, miRBase code, OMA code, UniProt code, dbPTM
-                code, or integer/string taxonomy ID.
+                code, synonym, or integer/string taxonomy ID.
 
         Returns:
             NCBI Taxonomy ID, or None if the organism is not found.
@@ -93,6 +98,8 @@ class TaxonomyManager:
             return taxon if taxon in self._by_taxid else None
 
         if isinstance(taxon, str):
+            taxon = taxon.strip()
+
             # Try as integer string
             try:
                 tid = int(taxon)
@@ -100,8 +107,21 @@ class TaxonomyManager:
             except ValueError:
                 pass
 
-            # Try all name forms (case-insensitive)
-            return self._to_taxid.get(taxon.lower())
+            # Direct lookup (case-insensitive)
+            result = self._to_taxid.get(taxon.lower())
+            if result:
+                return result
+
+            # Parenthetical: "Caenorhabditis elegans (PRJNA13758)"
+            if '(' in taxon:
+                part0 = taxon.split('(', 1)[0].strip()
+                part1 = taxon.split('(', 1)[1].rstrip(')').strip()
+                return (
+                    self._to_taxid.get(part0.lower()) or
+                    self._to_taxid.get(part1.lower())
+                )
+
+            return None
 
         return None
 
@@ -217,6 +237,144 @@ class TaxonomyManager:
         """
 
         return dict(self._by_taxid)
+
+    def load_from_ensembl(self) -> None:
+        """Load organisms from Ensembl via pypath.inputs.ensembl."""
+        try:
+            from pypath.inputs.ensembl import ensembl_organisms
+            count = 0
+            for org in ensembl_organisms():
+                taxid = int(org.taxon_id)
+                if taxid not in self._by_taxid:
+                    self._by_taxid[taxid] = {
+                        'common_name': (org.common_name or '').lower(),
+                        'latin_name': org.scientific_name or '',
+                        'short_latin': '',
+                        'ensembl_name': org.ensembl_name or '',
+                        'kegg_code': '',
+                        'mirbase_code': '',
+                        'oma_code': '',
+                        'uniprot_code': '',
+                        'dbptm_code': '',
+                        'synonyms': [],
+                    }
+                    count += 1
+                else:
+                    # Enrich
+                    info = self._by_taxid[taxid]
+                    if not info.get('ensembl_name') and org.ensembl_name:
+                        info['ensembl_name'] = org.ensembl_name
+                    if not info.get('latin_name') and org.scientific_name:
+                        info['latin_name'] = org.scientific_name
+                    if not info.get('common_name') and org.common_name:
+                        info['common_name'] = org.common_name.lower()
+
+            self._build_indices()
+            _log.info(
+                'Loaded %d new organisms from Ensembl (total: %d)',
+                count,
+                len(self._by_taxid),
+            )
+        except ImportError:
+            _log.debug('pypath not available for Ensembl organisms')
+        except Exception as e:
+            _log.warning('Failed to load Ensembl organisms: %s', e)
+
+    def load_from_uniprot(self) -> None:
+        """Load organisms from UniProt speclist via pypath.inputs.uniprot."""
+        try:
+            from pypath.inputs.uniprot import uniprot_ncbi_taxids_2
+            ncbi_data = uniprot_ncbi_taxids_2()
+            count = 0
+            for taxid, taxon in ncbi_data.items():
+                taxid = int(taxid)
+                if not taxid:
+                    continue
+                if taxid not in self._by_taxid:
+                    self._by_taxid[taxid] = {
+                        'common_name': (taxon.english or '').lower(),
+                        'latin_name': taxon.latin or '',
+                        'short_latin': '',
+                        'ensembl_name': '',
+                        'kegg_code': '',
+                        'mirbase_code': '',
+                        'oma_code': '',
+                        'uniprot_code': '',
+                        'dbptm_code': '',
+                        'synonyms': [],
+                    }
+                    count += 1
+                else:
+                    info = self._by_taxid[taxid]
+                    if not info.get('latin_name') and taxon.latin:
+                        info['latin_name'] = taxon.latin
+                    if not info.get('common_name') and taxon.english:
+                        info['common_name'] = taxon.english.lower()
+
+            self._build_indices()
+            _log.info(
+                'Loaded %d new organisms from UniProt (total: %d)',
+                count,
+                len(self._by_taxid),
+            )
+        except ImportError:
+            _log.debug('pypath not available for UniProt organisms')
+        except Exception as e:
+            _log.warning('Failed to load UniProt organisms: %s', e)
+
+    def load_from_kegg(self) -> None:
+        """Load KEGG codes via pypath.inputs.kegg_organisms."""
+        try:
+            from pypath.inputs.kegg_organisms import kegg_organisms
+            count = 0
+            for org in kegg_organisms():
+                # Try to match by latin name
+                for taxid, info in self._by_taxid.items():
+                    if (
+                        info.get('latin_name', '').lower() == org.name.lower()
+                        and not info.get('kegg_code')
+                    ):
+                        info['kegg_code'] = org.code
+                        count += 1
+                        break
+
+            self._build_indices()
+            _log.info('Enriched %d organisms with KEGG codes', count)
+        except ImportError:
+            _log.debug('pypath not available for KEGG organisms')
+        except Exception as e:
+            _log.warning('Failed to load KEGG organisms: %s', e)
+
+    def load_from_mirbase(self) -> None:
+        """Load miRBase codes via pypath.inputs.mirbase."""
+        try:
+            from pypath.inputs.mirbase import mirbase_organisms
+            mirbase_to_ncbi = mirbase_organisms('mirbase', 'ncbi')
+            count = 0
+            for mirbase_code, ncbi_id in mirbase_to_ncbi.items():
+                taxid = int(ncbi_id)
+                if taxid in self._by_taxid:
+                    if not self._by_taxid[taxid].get('mirbase_code'):
+                        self._by_taxid[taxid]['mirbase_code'] = mirbase_code
+                        count += 1
+
+            self._build_indices()
+            _log.info('Enriched %d organisms with miRBase codes', count)
+        except ImportError:
+            _log.debug('pypath not available for miRBase organisms')
+        except Exception as e:
+            _log.warning('Failed to load miRBase organisms: %s', e)
+
+    def load_all(self) -> None:
+        """Load organisms from all available sources."""
+        self.load_from_ensembl()
+        self.load_from_uniprot()
+        self.load_from_kegg()
+        self.load_from_mirbase()
+        _log.info(
+            'Taxonomy fully loaded: %d organisms',
+            len(self._by_taxid),
+        )
 
     def __contains__(self, taxon: TaxonInput) -> bool:
         return self.ensure_ncbi_tax_id(taxon) is not None

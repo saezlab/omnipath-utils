@@ -77,9 +77,17 @@ class DatabaseBuilder:
         _log.info('Populated %d backends', len(backends))
 
     def populate_organisms(self):
-        """Populate organism table from organisms.yaml."""
+        """Populate organism table from all available sources."""
         tm = TaxonomyManager.get()
+        tm.load_all()
         orgs = tm.all_organisms()
+
+        # Fields that exist in the Organism table
+        _db_fields = {
+            'common_name', 'latin_name', 'short_latin', 'ensembl_name',
+            'kegg_code', 'mirbase_code', 'oma_code', 'uniprot_code',
+            'dbptm_code',
+        }
 
         with Session(self.engine) as session:
             for taxid, info in orgs.items():
@@ -90,7 +98,10 @@ class DatabaseBuilder:
                     session.add(
                         Organism(
                             ncbi_tax_id=taxid,
-                            **{k: v for k, v in info.items() if v},
+                            **{
+                                k: v for k, v in info.items()
+                                if v and k in _db_fields
+                            },
                         )
                     )
             session.commit()

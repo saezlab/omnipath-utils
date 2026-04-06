@@ -125,3 +125,34 @@ class TestSingleton:
     def test_len(self):
         tm = TaxonomyManager.get()
         assert len(tm) >= 20
+
+
+class TestSynonyms:
+    """Test synonym-based organism lookups."""
+
+    def test_worm(self):
+        assert ensure_ncbi_tax_id('worm') == 6239
+
+    def test_fly(self):
+        assert ensure_ncbi_tax_id('fly') == 7227
+
+    def test_fish(self):
+        assert ensure_ncbi_tax_id('fish') == 7955
+
+    def test_drosophila(self):
+        assert ensure_ncbi_tax_id('drosophila') == 7227
+
+    def test_bovine(self):
+        assert ensure_ncbi_tax_id('bovine') == 9913
+
+    def test_fission_yeast(self):
+        assert ensure_ncbi_tax_id('fission yeast') == 284812
+
+    def test_ecoli(self):
+        assert ensure_ncbi_tax_id('e.coli') == 83333
+
+    def test_parenthetical(self):
+        assert ensure_ncbi_tax_id('Caenorhabditis elegans (PRJNA13758)') == 6239
+
+    def test_case_insensitive_synonym(self):
+        assert ensure_ncbi_tax_id('DROSOPHILA') == 7227

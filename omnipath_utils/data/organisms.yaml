@@ -12,6 +12,9 @@
   oma_code: HUMAN
   uniprot_code: HUMAN
   dbptm_code: HUMAN
+  synonyms:
+    - homo
+    - man
 
 10090:
   common_name: mouse
@@ -23,6 +26,8 @@
   oma_code: MOUSE
   uniprot_code: MOUSE
   dbptm_code: MOUSE
+  synonyms:
+    - mus
 
 10116:
   common_name: rat
@@ -34,6 +39,8 @@
   oma_code: RAT
   uniprot_code: RAT
   dbptm_code: RAT
+  synonyms:
+    - rattus
 
 9031:
   common_name: chicken
@@ -45,6 +52,10 @@
   oma_code: CHICK
   uniprot_code: CHICK
   dbptm_code: ""
+  synonyms:
+    - gallus
+    - hen
+    - gga
 
 9913:
   common_name: cow
@@ -56,6 +67,13 @@
   oma_code: BOVIN
   uniprot_code: BOVIN
   dbptm_code: BOVIN
+  synonyms:
+    - bovine
+    - cattle
+    - bos
+    - bta
+    - bull
+    - ox
 
 9986:
   common_name: rabbit
@@ -67,6 +85,9 @@
   oma_code: RABIT
   uniprot_code: RABIT
   dbptm_code: ""
+  synonyms:
+    - oryctolagus
+    - ocu
 
 9940:
   common_name: sheep
@@ -78,6 +99,10 @@
   oma_code: SHEEP
   uniprot_code: SHEEP
   dbptm_code: SHEEP
+  synonyms:
+    - ovine
+    - ovis
+    - oas
 
 10141:
   common_name: guinea pig
@@ -89,6 +114,8 @@
   oma_code: CAVPO
   uniprot_code: CAVPO
   dbptm_code: ""
+  synonyms:
+    - cavia
 
 10036:
   common_name: hamster
@@ -100,6 +127,9 @@
   oma_code: MESAU
   uniprot_code: MESAU
   dbptm_code: ""
+  synonyms:
+    - mesocricetus
+    - cgr
 
 7227:
   common_name: fruit fly
@@ -111,6 +141,11 @@
   oma_code: DROME
   uniprot_code: DROME
   dbptm_code: DROME
+  synonyms:
+    - fly
+    - drosophila
+    - fruitfly
+    - drome
 
 9615:
   common_name: dog
@@ -122,6 +157,10 @@
   oma_code: CANLF
   uniprot_code: CANLF
   dbptm_code: CANLF
+  synonyms:
+    - canine
+    - canis
+    - cfa
 
 9823:
   common_name: pig
@@ -133,6 +172,11 @@
   oma_code: PIG
   uniprot_code: PIG
   dbptm_code: PIG
+  synonyms:
+    - swine
+    - porcine
+    - sus
+    - ssc
 
 8355:
   common_name: frog
@@ -144,6 +188,11 @@
   oma_code: XENLA
   uniprot_code: XENLA
   dbptm_code: XENLA
+  synonyms:
+    - xenopus
+    - african clawed frog
+    - xla
+    - xle
 
 9796:
   common_name: horse
@@ -155,6 +204,10 @@
   oma_code: HORSE
   uniprot_code: HORSE
   dbptm_code: ""
+  synonyms:
+    - equine
+    - equus
+    - eca
 
 9925:
   common_name: goat
@@ -166,6 +219,7 @@
   oma_code: CAPHI
   uniprot_code: CAPHI
   dbptm_code: CAPHI
+  synonyms: []
 
 9598:
   common_name: chimpanzee
@@ -177,6 +231,10 @@
   oma_code: PANTR
   uniprot_code: PANTR
   dbptm_code: ""
+  synonyms:
+    - chimp
+    - pan
+    - ptr
 
 9685:
   common_name: cat
@@ -188,6 +246,9 @@
   oma_code: FELCA
   uniprot_code: FELCA
   dbptm_code: ""
+  synonyms:
+    - feline
+    - felis
 
 9544:
   common_name: rhesus macaque
@@ -199,6 +260,10 @@
   oma_code: MACMU
   uniprot_code: MACMU
   dbptm_code: ""
+  synonyms:
+    - macaque
+    - rhesus
+    - mcc
 
 7955:
   common_name: zebrafish
@@ -210,6 +275,10 @@
   oma_code: DANRE
   uniprot_code: DANRE
   dbptm_code: ""
+  synonyms:
+    - fish
+    - danio
+    - dre
 
 6239:
   common_name: nematode
@@ -221,6 +290,13 @@
   oma_code: CAEEL
   uniprot_code: CAEEL
   dbptm_code: CAEEL
+  synonyms:
+    - worm
+    - c.elegans
+    - caenorhabditis
+    - roundworm
+    - elegans
+    - cel
 
 4932:
   common_name: yeast
@@ -232,6 +308,12 @@
   oma_code: YEAST
   uniprot_code: YEAST
   dbptm_code: ""
+  synonyms:
+    - budding yeast
+    - saccharomyces
+    - "baker's yeast"
+    - sce
+    - "brewer's yeast"
 
 3702:
   common_name: arabidopsis
@@ -243,3 +325,79 @@
   oma_code: ARATH
   uniprot_code: ARATH
   dbptm_code: ARATH
+  synonyms:
+    - thale cress
+    - ath
+    - arath
+
+559292:
+  common_name: yeast s288c
+  latin_name: Saccharomyces cerevisiae S288C
+  short_latin: S. cerevisiae S288C
+  ensembl_name: ""
+  kegg_code: ""
+  mirbase_code: ""
+  oma_code: ""
+  uniprot_code: ""
+  dbptm_code: ""
+  synonyms:
+    - s288c
+    - s288
+
+284812:
+  common_name: fission yeast
+  latin_name: Schizosaccharomyces pombe
+  short_latin: S. pombe
+  ensembl_name: spombe
+  kegg_code: spo
+  mirbase_code: ""
+  oma_code: SCHPO
+  uniprot_code: SCHPO
+  dbptm_code: ""
+  synonyms:
+    - s.pombe
+    - schpo
+    - spo
+
+83333:
+  common_name: e. coli k-12
+  latin_name: Escherichia coli K-12
+  short_latin: E. coli K-12
+  ensembl_name: ""
+  kegg_code: eco
+  mirbase_code: ""
+  oma_code: ""
+  uniprot_code: ""
+  dbptm_code: ""
+  synonyms:
+    - ecoli
+    - e.coli
+    - escherichia
+    - eco
+
+44689:
+  common_name: slime mold
+  latin_name: Dictyostelium discoideum
+  short_latin: D. discoideum
+  ensembl_name: ""
+  kegg_code: ddi
+  mirbase_code: ""
+  oma_code: DICDI
+  uniprot_code: DICDI
+  dbptm_code: ""
+  synonyms:
+    - dictyostelium
+    - dicdi
+
+1142:
+  common_name: cyanobacteria
+  latin_name: Synechocystis sp. PCC 6803
+  short_latin: Synechocystis sp.
+  ensembl_name: ""
+  kegg_code: syn
+  mirbase_code: ""
+  oma_code: ""
+  uniprot_code: ""
+  dbptm_code: ""
+  synonyms:
+    - synechocystis
