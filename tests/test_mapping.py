@@ -1116,3 +1116,54 @@ class TestTranslateColumns:
         # 1 genesymbol * 2 entrez = 2 rows
         assert len(result) == 2
         assert set(result['entrez']) == {'7157', '99999'}
+
+
+class TestTranslateColumnPolars:
+    """Tests for translate_column with polars backend."""
+
+    def setup_method(self):
+        """Reset singleton for test isolation."""
+        Mapper._instance = None
+
+    def test_basic_with_polars(self):
+        pl = __import__('pytest').importorskip('polars')
+        from omnipath_utils.mapping import translate_column
+
+        mapper = Mapper()
+        table = MappingTable(
+            data={'P04637': {'TP53'}, 'P00533': {'EGFR'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[table.key] = table
+        Mapper._instance = mapper
+
+        df = pl.DataFrame({'protein': ['P04637', 'P00533', 'FAKE']})
+        result = translate_column(df, 'protein', 'uniprot', 'genesymbol')
+
+        assert isinstance(result, pl.DataFrame)
+        assert 'genesymbol' in result.columns
+
+    def test_expand_with_polars(self):
+        pl = __import__('pytest').importorskip('polars')
+        from omnipath_utils.mapping import translate_column
+
+        mapper = Mapper()
+        table = MappingTable(
+            data={'TP53': {'P04637', 'A0A024R1R8'}},
+            id_type='genesymbol',
+            target_id_type='uniprot',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[table.key] = table
+        Mapper._instance = mapper
+
+        df = pl.DataFrame({'gene': ['TP53']})
+        result = translate_column(
+            df, 'gene', 'genesymbol', 'uniprot', expand=True
+        )
+
+        assert isinstance(result, pl.DataFrame)
+        assert len(result) == 2
+        assert set(result['uniprot'].to_list()) == {'P04637', 'A0A024R1R8'}
