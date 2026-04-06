@@ -48,12 +48,14 @@ def create_app(db_url: str | None = None) -> Litestar:
     from omnipath_utils.server._routes_mapping import MappingController
     from omnipath_utils.server._routes_taxonomy import TaxonomyController
     from omnipath_utils.server._routes_reflists import ReflistController
+    from omnipath_utils.server._routes_orthology import OrthologyController
 
     app = Litestar(
         route_handlers=[
             MappingController,
             TaxonomyController,
             ReflistController,
+            OrthologyController,
             health_check,
             landing_page,
         ],

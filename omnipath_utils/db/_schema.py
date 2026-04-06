@@ -97,3 +97,26 @@ class BuildInfo(Base):
     built_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     duration_secs: Mapped[float | None] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default='pending')
+
+
+class Orthology(Base):
+    __tablename__ = 'orthology'
+    __table_args__ = (
+        Index('idx_orth_fwd', 'source_tax_id', 'target_tax_id', 'id_type', 'resource', 'source_id'),
+        Index('idx_orth_rev', 'target_tax_id', 'source_tax_id', 'id_type', 'resource', 'target_id'),
+        {'schema': 'omnipath_utils'},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_tax_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_tax_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    id_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource: Mapped[str] = mapped_column(String(32), nullable=False)
+    rel_type: Mapped[str | None] = mapped_column(String(8))
+    score: Mapped[float | None] = mapped_column(Float)
+    confidence: Mapped[str | None] = mapped_column(String(8))
+    orth_type: Mapped[str | None] = mapped_column(String(16))
+    n_sources: Mapped[int | None] = mapped_column(Integer)
+    support: Mapped[str | None] = mapped_column(Text)
