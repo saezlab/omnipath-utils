@@ -108,3 +108,77 @@ class TestOrthologySchema:
         assert 'rel_type' in cols
         assert 'n_sources' in cols
         assert 'support' in cols
+
+
+class TestOrthologyBackends:
+
+    def setup_method(self):
+        OrthologyManager._instance = None
+
+    @patch.object(OrthologyManager, '_load_table')
+    def test_default_resource_order(self, mock_load):
+        mock_load.return_value = None
+        mgr = OrthologyManager()
+        mgr.translate(['TP53'], source=9606, target=10090)
+
+        # Should try all resources in order
+        resources_tried = [c.args[3] for c in mock_load.call_args_list]
+        assert resources_tried == [
+            'hcop', 'ensembl', 'oma', 'orthodb', 'alliance', 'homologene',
+        ]
+
+    def test_orthodb_backend_exists(self):
+        mgr = OrthologyManager()
+        assert hasattr(mgr, '_load_orthodb')
+        assert callable(mgr._load_orthodb)
+
+    def test_alliance_backend_exists(self):
+        mgr = OrthologyManager()
+        assert hasattr(mgr, '_load_alliance')
+        assert callable(mgr._load_alliance)
+
+    def test_orthodb_loads_table(self):
+        mock_mod = MagicMock()
+        mock_mod.orthodb_orthologs.return_value = {'TP53': {'Trp53'}}
+
+        with patch.dict('sys.modules', {'pypath': MagicMock(), 'pypath.inputs': MagicMock(), 'pypath.inputs.orthodb': mock_mod}):
+            mgr = OrthologyManager()
+            table = mgr._load_orthodb(9606, 10090, 'genesymbol')
+            assert table is not None
+            assert table.resource == 'orthodb'
+            assert table['TP53'] == {'Trp53'}
+            mock_mod.orthodb_orthologs.assert_called_once_with(
+                source=9606, target=10090, id_type='genesymbol',
+            )
+
+    def test_orthodb_empty_returns_none(self):
+        mock_mod = MagicMock()
+        mock_mod.orthodb_orthologs.return_value = {}
+
+        with patch.dict('sys.modules', {'pypath': MagicMock(), 'pypath.inputs': MagicMock(), 'pypath.inputs.orthodb': mock_mod}):
+            mgr = OrthologyManager()
+            table = mgr._load_orthodb(9606, 10090, 'genesymbol')
+            assert table is None
+
+    def test_alliance_loads_table(self):
+        mock_mod = MagicMock()
+        mock_mod.alliance_dict.return_value = {'TP53': {'Trp53'}}
+
+        with patch.dict('sys.modules', {'pypath': MagicMock(), 'pypath.inputs': MagicMock(), 'pypath.inputs.alliance': mock_mod}):
+            mgr = OrthologyManager()
+            table = mgr._load_alliance(9606, 10090, 'genesymbol')
+            assert table is not None
+            assert table.resource == 'alliance'
+            assert table['TP53'] == {'Trp53'}
+            mock_mod.alliance_dict.assert_called_once_with(
+                source=9606, target=10090, id_type='genesymbol',
+            )
+
+    def test_alliance_empty_returns_none(self):
+        mock_mod = MagicMock()
+        mock_mod.alliance_dict.return_value = {}
+
+        with patch.dict('sys.modules', {'pypath': MagicMock(), 'pypath.inputs': MagicMock(), 'pypath.inputs.alliance': mock_mod}):
+            mgr = OrthologyManager()
+            table = mgr._load_alliance(9606, 10090, 'genesymbol')
+            assert table is None

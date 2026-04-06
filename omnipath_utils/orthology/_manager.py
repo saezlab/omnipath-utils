@@ -83,7 +83,10 @@ class OrthologyManager:
         return dict(table.data) if table else {}
 
     def _get_table(self, source, target, id_type, resource=None, min_sources=1):
-        resources = [resource] if resource else ['hcop', 'oma', 'ensembl', 'homologene']
+        resources = (
+            [resource] if resource else
+            ['hcop', 'ensembl', 'oma', 'orthodb', 'alliance', 'homologene']
+        )
 
         for res in resources:
             key = (source, target, id_type, res)
@@ -112,6 +115,10 @@ class OrthologyManager:
                 return self._load_ensembl(source, target, id_type)
             elif resource == 'homologene':
                 return self._load_homologene(source, target, id_type)
+            elif resource == 'orthodb':
+                return self._load_orthodb(source, target, id_type)
+            elif resource == 'alliance':
+                return self._load_alliance(source, target, id_type)
         except ImportError:
             _log.debug('pypath not available for orthology resource %s', resource)
         except Exception as e:
@@ -275,4 +282,38 @@ class OrthologyManager:
         return OrthologyTable(
             data=data, source=source, target=target,
             id_type=id_type, resource='homologene',
+        )
+
+    def _load_orthodb(self, source, target, id_type):
+        from pypath.inputs.orthodb import orthodb_orthologs
+
+        data = orthodb_orthologs(
+            source=source,
+            target=target,
+            id_type=id_type,
+        )
+
+        if not data:
+            return None
+
+        return OrthologyTable(
+            data=data, source=source, target=target,
+            id_type=id_type, resource='orthodb',
+        )
+
+    def _load_alliance(self, source, target, id_type):
+        from pypath.inputs.alliance import alliance_dict
+
+        data = alliance_dict(
+            source=source,
+            target=target,
+            id_type=id_type,
+        )
+
+        if not data:
+            return None
+
+        return OrthologyTable(
+            data=data, source=source, target=target,
+            id_type=id_type, resource='alliance',
         )
