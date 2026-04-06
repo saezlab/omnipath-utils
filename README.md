@@ -1,8 +1,9 @@
-# omnipath-utils
-
-ID translation, taxonomy, and reference lists for molecular biology.
-
 [![Tests](https://github.com/saezlab/omnipath-utils/actions/workflows/ci-testing-unit.yml/badge.svg)](https://github.com/saezlab/omnipath-utils/actions)
+
+# Utilities for molecular prior-knowledge processing
+
+ID translation, taxonomy, reference lists, orthologous genes, and more. Also
+available as a web service: https://utils.omnipathdb.org/
 
 ## Quick Start
 
@@ -56,4 +57,6 @@ https://saezlab.github.io/omnipath-utils
 
 ## License
 
-GPL-3.0-or-later
+The package is under the GNU GPLv3 license. This doesn't affect the web service
+and data, where each original resource carries its own license, and is
+potentially available for commercial use.
