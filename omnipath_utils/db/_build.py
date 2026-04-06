@@ -208,3 +208,177 @@ class DatabaseBuilder:
                     self.populate_mapping(src, tgt, org, backend)
                 except Exception as e:
                     _log.error('Failed: %s -> %s (org %d): %s', src, tgt, org, e)
+
+    def populate_from_ftp(self, id_types: set[str] | None = None):
+        """Populate id_mapping table from the full UniProt FTP idmapping file.
+
+        This processes the complete ~18GB idmapping.dat.gz in a single pass,
+        streaming directly into PostgreSQL via COPY.
+
+        Strategy:
+        1. Stream all records, insert mappings with ncbi_tax_id=0
+        2. Collect NCBI_TaxID rows in a temp table
+        3. UPDATE id_mapping.ncbi_tax_id from the temp table
+        """
+        from omnipath_utils.db._connection import get_connection, SCHEMA
+
+        _log.info('Starting full FTP idmapping build')
+        start = time.time()
+
+        # Get or create the backend ID for 'uniprot_ftp'
+        with Session(self.engine) as session:
+            backend = session.query(Backend).filter_by(name='uniprot_ftp').first()
+            if not backend:
+                _log.error('Backend uniprot_ftp not found in database')
+                return
+            backend_id = backend.id
+
+        # We need type IDs for each FTP ID type name
+        # Build a mapping from FTP type names to our id_type table IDs
+        from pypath.inputs.uniprot_ftp import IDTYPE_MAP, idmapping_full_stream
+
+        with Session(self.engine) as session:
+            type_name_to_id = {}
+            for ftp_name, canonical_name in IDTYPE_MAP.items():
+                if canonical_name.startswith('_'):  # skip _taxid etc
+                    continue
+                id_type = session.query(IdType).filter_by(name=canonical_name).first()
+                if id_type:
+                    type_name_to_id[ftp_name] = id_type.id
+
+            # We also need the 'uniprot' type ID (source side is always uniprot AC)
+            uniprot_type = session.query(IdType).filter_by(name='uniprot').first()
+            if not uniprot_type:
+                _log.error('ID type "uniprot" not found')
+                return
+            uniprot_type_id = uniprot_type.id
+
+        _log.info('Mapped %d FTP ID types to database IDs', len(type_name_to_id))
+
+        # Connect raw psycopg for COPY
+        conn = get_connection(self._db_url)
+        cur = conn.cursor()
+
+        # Create temp table for taxonomy
+        cur.execute(
+            'CREATE TEMP TABLE IF NOT EXISTS ac_taxid '
+            '(ac VARCHAR(16) PRIMARY KEY, taxid INTEGER)'
+        )
+        cur.execute('TRUNCATE ac_taxid')
+        conn.commit()
+
+        # Delete existing FTP-loaded data
+        cur.execute(
+            f'DELETE FROM {SCHEMA}.id_mapping WHERE backend_id = %s',
+            (backend_id,),
+        )
+        conn.commit()
+        _log.info('Cleared existing FTP data')
+
+        # Stream and insert
+        mapping_count = 0
+        taxid_count = 0
+
+        # We will use two COPY streams: one for mappings, one for taxids
+        # But COPY can only target one table at a time, so we buffer taxids
+        taxid_buffer = {}
+
+        # Start COPY for id_mapping
+        ftp_types = set(type_name_to_id.keys())
+        ftp_types.add('NCBI_TaxID')  # always collect taxids
+
+        with cur.copy(
+            f'COPY {SCHEMA}.id_mapping '
+            '(source_type_id, target_type_id, ncbi_tax_id, '
+            'source_id, target_id, backend_id) FROM STDIN'
+        ) as copy:
+            for uniprot_ac, id_type_name, id_value in idmapping_full_stream(
+                id_types=ftp_types
+            ):
+                if id_type_name == 'NCBI_TaxID':
+                    # Buffer taxonomy info
+                    try:
+                        taxid_buffer[uniprot_ac] = int(id_value)
+                        taxid_count += 1
+                    except ValueError:
+                        pass
+                    continue
+
+                target_type_id = type_name_to_id.get(id_type_name)
+                if not target_type_id:
+                    continue
+
+                # Insert with ncbi_tax_id=0 (will be updated later)
+                copy.write_row((
+                    uniprot_type_id,  # source is always uniprot
+                    target_type_id,
+                    0,  # ncbi_tax_id unknown for now
+                    uniprot_ac[:64],
+                    id_value[:64],
+                    backend_id,
+                ))
+                mapping_count += 1
+
+                if mapping_count % 10_000_000 == 0:
+                    _log.info(
+                        'Inserted %dM mapping rows, %dM taxids buffered',
+                        mapping_count // 1_000_000,
+                        len(taxid_buffer) // 1_000_000,
+                    )
+
+        conn.commit()
+        _log.info('Inserted %d mapping rows', mapping_count)
+
+        # Now load taxids into temp table
+        _log.info('Loading %d taxid assignments', len(taxid_buffer))
+        with cur.copy('COPY ac_taxid (ac, taxid) FROM STDIN') as copy:
+            for ac, taxid in taxid_buffer.items():
+                copy.write_row((ac, taxid))
+        conn.commit()
+
+        # Update ncbi_tax_id in id_mapping from the temp table
+        _log.info('Updating ncbi_tax_id for %d mapping rows...', mapping_count)
+        cur.execute(
+            f'UPDATE {SCHEMA}.id_mapping m '
+            'SET ncbi_tax_id = t.taxid '
+            'FROM ac_taxid t '
+            'WHERE m.source_id = t.ac '
+            'AND m.backend_id = %s '
+            'AND m.ncbi_tax_id = 0',
+            (backend_id,),
+        )
+        updated = cur.rowcount
+        conn.commit()
+        _log.info('Updated %d rows with organism info', updated)
+
+        # Clean up temp table
+        cur.execute('DROP TABLE IF EXISTS ac_taxid')
+        conn.commit()
+
+        # ANALYZE for query planner
+        cur.execute(f'ANALYZE {SCHEMA}.id_mapping')
+        conn.commit()
+
+        duration = time.time() - start
+        _log.info(
+            'Full FTP build complete: %d mappings, %d taxids, %.1f minutes',
+            mapping_count,
+            taxid_count,
+            duration / 60,
+        )
+
+        # Record in build_info
+        with Session(self.engine) as session:
+            session.add(BuildInfo(
+                table_name='id_mapping',
+                source_type='uniprot (all)',
+                target_type='all FTP types',
+                ncbi_tax_id=0,
+                backend='uniprot_ftp',
+                row_count=mapping_count,
+                duration_secs=duration,
+                status='done',
+            ))
+            session.commit()
+
+        conn.close()
