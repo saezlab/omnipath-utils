@@ -16,9 +16,15 @@ class OrthologyController(Controller):
         source: int = Parameter(default=9606, description='Source organism'),
         target: int = Parameter(default=10090, description='Target organism'),
         id_type: str = Parameter(default='genesymbol', description='ID type'),
-        resource: str = Parameter(default=None, required=False, description='Force resource'),
-        min_sources: int = Parameter(default=1, description='Min supporting DBs (HCOP)'),
-        raw: bool = Parameter(default=False, description='Skip post-processing'),
+        resource: str = Parameter(
+            default=None, required=False, description='Force resource'
+        ),
+        min_sources: int = Parameter(
+            default=1, description='Min supporting DBs (HCOP)'
+        ),
+        raw: bool = Parameter(
+            default=False, description='Skip post-processing'
+        ),
     ) -> dict:
         """Translate identifiers to orthologs in another organism."""
         from omnipath_utils.orthology import translate
@@ -26,8 +32,13 @@ class OrthologyController(Controller):
         id_list = [i.strip() for i in identifiers.split(',') if i.strip()]
 
         result = translate(
-            id_list, source=source, target=target, id_type=id_type,
-            resource=resource, min_sources=min_sources, raw=raw,
+            id_list,
+            source=source,
+            target=target,
+            id_type=id_type,
+            resource=resource,
+            min_sources=min_sources,
+            raw=raw,
         )
 
         mapped = {k: sorted(v) for k, v in result.items() if v}

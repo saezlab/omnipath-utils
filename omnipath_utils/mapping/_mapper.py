@@ -22,10 +22,15 @@ RE_UNIPROT = re.compile(
 )
 
 # Source ID types where case fallbacks should NOT be applied
-_UNIPROT_SOURCE_TYPES = frozenset({
-    'uniprot', 'swissprot', 'trembl',
-    'uniprot-sec', 'uniprot-pri',
-})
+_UNIPROT_SOURCE_TYPES = frozenset(
+    {
+        'uniprot',
+        'swissprot',
+        'trembl',
+        'uniprot-sec',
+        'uniprot-pri',
+    }
+)
 
 
 class Mapper:
@@ -165,7 +170,10 @@ class Mapper:
 
         # Direct lookup
         result = self._direct_lookup(
-            name, id_type, target_id_type, ncbi_tax_id,
+            name,
+            id_type,
+            target_id_type,
+            ncbi_tax_id,
         )
 
         if result:
@@ -188,7 +196,11 @@ class Mapper:
             )
 
             result = map_genesymbol_fallbacks(
-                name, target_id_type, ncbi_tax_id, self, strict,
+                name,
+                target_id_type,
+                ncbi_tax_id,
+                self,
+                strict,
             )
 
             if result:
@@ -204,7 +216,12 @@ class Mapper:
             from omnipath_utils.mapping._special import map_refseq
 
             result = map_refseq(
-                name, id_type, target_id_type, ncbi_tax_id, self, strict,
+                name,
+                id_type,
+                target_id_type,
+                ncbi_tax_id,
+                self,
+                strict,
             )
 
             if result:
@@ -222,7 +239,11 @@ class Mapper:
             )
 
             result = map_ensembl_strip_version(
-                name, id_type, target_id_type, ncbi_tax_id, self,
+                name,
+                id_type,
+                target_id_type,
+                ncbi_tax_id,
+                self,
             )
 
             if result:
@@ -238,7 +259,11 @@ class Mapper:
             from omnipath_utils.mapping._special import map_mirna_fallback
 
             result = map_mirna_fallback(
-                name, id_type, target_id_type, ncbi_tax_id, self,
+                name,
+                id_type,
+                target_id_type,
+                ncbi_tax_id,
+                self,
             )
 
             if result:
@@ -249,7 +274,11 @@ class Mapper:
             from omnipath_utils.mapping._special import strip_prefix
 
             result = strip_prefix(
-                name, id_type, target_id_type, ncbi_tax_id, self,
+                name,
+                id_type,
+                target_id_type,
+                ncbi_tax_id,
+                self,
             )
 
             if result:
@@ -265,7 +294,11 @@ class Mapper:
             from omnipath_utils.mapping._special import chain_map
 
             result = chain_map(
-                name, id_type, target_id_type, ncbi_tax_id, self,
+                name,
+                id_type,
+                target_id_type,
+                ncbi_tax_id,
+                self,
             )
 
             if result:
@@ -273,7 +306,10 @@ class Mapper:
 
         # Try reverse lookup
         result = self._reverse_lookup(
-            name, id_type, target_id_type, ncbi_tax_id,
+            name,
+            id_type,
+            target_id_type,
+            ncbi_tax_id,
         )
 
         if result:
@@ -317,7 +353,10 @@ class Mapper:
         """
 
         result = self.map_name(
-            name, id_type, target_id_type, ncbi_tax_id,
+            name,
+            id_type,
+            target_id_type,
+            ncbi_tax_id,
         )
 
         return next(iter(result)) if result else None
@@ -372,7 +411,10 @@ class Mapper:
             return None
 
         table = self._load_table(
-            id_type, target_id_type, ncbi_tax_id, backend=backend,
+            id_type,
+            target_id_type,
+            ncbi_tax_id,
+            backend=backend,
         )
 
         if table:
@@ -457,10 +499,12 @@ class Mapper:
 
         for backend_name, yaml_key in self._BACKEND_YAML_KEYS.items():
             src_col = self._id_types.backend_column(
-                id_type, yaml_key,
+                id_type,
+                yaml_key,
             )
             tgt_col = self._id_types.backend_column(
-                target_id_type, yaml_key,
+                target_id_type,
+                yaml_key,
             )
 
             if src_col and tgt_col:
@@ -505,6 +549,5 @@ class Mapper:
 
     def __repr__(self) -> str:
         return (
-            f'<Mapper tables={len(self.tables)}, '
-            f'organism={self.ncbi_tax_id}>'
+            f'<Mapper tables={len(self.tables)}, organism={self.ncbi_tax_id}>'
         )

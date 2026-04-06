@@ -62,18 +62,25 @@ class ReferenceListManager:
 
     def _load_swissprot(self, ncbi_tax_id: int) -> set[str]:
         """Load all reviewed UniProt ACs for an organism."""
-        _log.info('Loading SwissProt reference list for organism %d', ncbi_tax_id)
+        _log.info(
+            'Loading SwissProt reference list for organism %d', ncbi_tax_id
+        )
 
         try:
             from pypath.inputs.uniprot import UniprotQuery
-            q = UniprotQuery(organism=ncbi_tax_id, fields='accession', reviewed=True)
+
+            q = UniprotQuery(
+                organism=ncbi_tax_id, fields='accession', reviewed=True
+            )
             data = q.perform()
             result = set(data.keys()) if data else set()
         except ImportError:
             # Fallback: use direct HTTP
             result = self._load_uniprot_direct(ncbi_tax_id, reviewed=True)
 
-        _log.info('SwissProt list: %d IDs for organism %d', len(result), ncbi_tax_id)
+        _log.info(
+            'SwissProt list: %d IDs for organism %d', len(result), ncbi_tax_id
+        )
         return result
 
     def _load_trembl(self, ncbi_tax_id: int) -> set[str]:
@@ -82,20 +89,29 @@ class ReferenceListManager:
 
         try:
             from pypath.inputs.uniprot import UniprotQuery
-            q = UniprotQuery(organism=ncbi_tax_id, fields='accession', reviewed=False)
+
+            q = UniprotQuery(
+                organism=ncbi_tax_id, fields='accession', reviewed=False
+            )
             data = q.perform()
             result = set(data.keys()) if data else set()
         except ImportError:
             result = self._load_uniprot_direct(ncbi_tax_id, reviewed=False)
 
-        _log.info('TrEMBL list: %d IDs for organism %d', len(result), ncbi_tax_id)
+        _log.info(
+            'TrEMBL list: %d IDs for organism %d', len(result), ncbi_tax_id
+        )
         return result
 
     def _load_uniprot_all(self, ncbi_tax_id: int) -> set[str]:
         """Load all UniProt ACs (SwissProt + TrEMBL)."""
-        return self._load_swissprot(ncbi_tax_id) | self._load_trembl(ncbi_tax_id)
+        return self._load_swissprot(ncbi_tax_id) | self._load_trembl(
+            ncbi_tax_id
+        )
 
-    def _load_uniprot_direct(self, ncbi_tax_id: int, reviewed: bool | None = None) -> set[str]:
+    def _load_uniprot_direct(
+        self, ncbi_tax_id: int, reviewed: bool | None = None
+    ) -> set[str]:
         """Direct HTTP fallback for loading UniProt AC lists."""
         import requests
 
@@ -114,10 +130,14 @@ class ReferenceListManager:
         lines = resp.text.strip().split('\n')
         return {line.strip() for line in lines[1:] if line.strip()}
 
-    def is_swissprot(self, uniprot_ac: str, ncbi_tax_id: int = DEFAULT_ORGANISM) -> bool:
+    def is_swissprot(
+        self, uniprot_ac: str, ncbi_tax_id: int = DEFAULT_ORGANISM
+    ) -> bool:
         """Check if a UniProt AC is in the SwissProt (reviewed) set."""
         return uniprot_ac in self.get_reflist('swissprot', ncbi_tax_id)
 
-    def is_trembl(self, uniprot_ac: str, ncbi_tax_id: int = DEFAULT_ORGANISM) -> bool:
+    def is_trembl(
+        self, uniprot_ac: str, ncbi_tax_id: int = DEFAULT_ORGANISM
+    ) -> bool:
         """Check if a UniProt AC is in the TrEMBL (unreviewed) set."""
         return uniprot_ac in self.get_reflist('trembl', ncbi_tax_id)

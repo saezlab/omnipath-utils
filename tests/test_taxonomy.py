@@ -96,7 +96,6 @@ class TestEnsureNames:
 
 
 class TestAllOrganisms:
-
     def test_returns_dict(self):
         orgs = all_organisms()
         assert isinstance(orgs, dict)
@@ -112,7 +111,6 @@ class TestAllOrganisms:
 
 
 class TestSingleton:
-
     def test_singleton(self):
         tm1 = TaxonomyManager.get()
         tm2 = TaxonomyManager.get()

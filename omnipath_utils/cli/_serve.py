@@ -12,13 +12,20 @@ def serve_cmd(args: list[str]) -> None:
         description='Start omnipath-utils web service',
     )
     parser.add_argument(
-        '--db-url', default=None, help='PostgreSQL connection URL',
+        '--db-url',
+        default=None,
+        help='PostgreSQL connection URL',
     )
     parser.add_argument(
-        '--host', default='0.0.0.0', help='Host to bind to',
+        '--host',
+        default='0.0.0.0',
+        help='Host to bind to',
     )
     parser.add_argument(
-        '--port', type=int, default=8082, help='Port to listen on',
+        '--port',
+        type=int,
+        default=8082,
+        help='Port to listen on',
     )
     parser.add_argument('-v', '--verbose', action='store_true')
 

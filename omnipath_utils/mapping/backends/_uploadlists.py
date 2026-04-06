@@ -45,14 +45,12 @@ class UploadListsBackend(MappingBackend):
 
         reg = IdTypeRegistry.get()
 
-        from_db = (
-            reg.backend_column(id_type, 'uniprot_from')
-            or reg.backend_column(id_type, 'uploadlists')
-        )
-        to_db = (
-            reg.backend_column(target_id_type, 'uniprot_to')
-            or reg.backend_column(target_id_type, 'uploadlists')
-        )
+        from_db = reg.backend_column(
+            id_type, 'uniprot_from'
+        ) or reg.backend_column(id_type, 'uploadlists')
+        to_db = reg.backend_column(
+            target_id_type, 'uniprot_to'
+        ) or reg.backend_column(target_id_type, 'uploadlists')
 
         if not from_db or not to_db:
             _log.debug(
@@ -91,13 +89,29 @@ class UploadListsBackend(MappingBackend):
 
         return data
 
-    def _read_via_pypath(self, id_type, target_id_type, ncbi_tax_id,
-                         *, src_col, tgt_col, **kwargs):
+    def _read_via_pypath(
+        self,
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
+        *,
+        src_col,
+        tgt_col,
+        **kwargs,
+    ):
         """Not used -- read() is overridden."""
         raise NotImplementedError  # pragma: no cover
 
-    def _read_direct(self, id_type, target_id_type, ncbi_tax_id,
-                     *, src_col, tgt_col, **kwargs):
+    def _read_direct(
+        self,
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
+        *,
+        src_col,
+        tgt_col,
+        **kwargs,
+    ):
         """Not used -- read() is overridden."""
         raise NotImplementedError  # pragma: no cover
 

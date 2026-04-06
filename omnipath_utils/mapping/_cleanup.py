@@ -58,7 +58,9 @@ def _primary_uniprot(
     result = set()
 
     for up in uniprots:
-        primary = mapper._direct_lookup(up, 'uniprot-sec', 'uniprot-pri', ncbi_tax_id)
+        primary = mapper._direct_lookup(
+            up, 'uniprot-sec', 'uniprot-pri', ncbi_tax_id
+        )
         if primary:
             result.update(primary)
         else:
@@ -80,6 +82,7 @@ def _trembl_to_swissprot(
     """
     try:
         from omnipath_utils.reflists import all_swissprots
+
         swissprot_set = all_swissprots(ncbi_tax_id)
     except Exception:
         # If reflists not available, can not filter
@@ -97,14 +100,20 @@ def _trembl_to_swissprot(
             continue
 
         # It is a TrEMBL -- try to find SwissProt via gene symbol
-        genesymbols = mapper._direct_lookup(up, 'trembl', 'genesymbol', ncbi_tax_id)
+        genesymbols = mapper._direct_lookup(
+            up, 'trembl', 'genesymbol', ncbi_tax_id
+        )
         if not genesymbols:
-            genesymbols = mapper._direct_lookup(up, 'uniprot', 'genesymbol', ncbi_tax_id)
+            genesymbols = mapper._direct_lookup(
+                up, 'uniprot', 'genesymbol', ncbi_tax_id
+            )
 
         if genesymbols:
             # Map gene symbol -> SwissProt
             for gs in genesymbols:
-                swissprots = mapper._direct_lookup(gs, 'genesymbol', 'swissprot', ncbi_tax_id)
+                swissprots = mapper._direct_lookup(
+                    gs, 'genesymbol', 'swissprot', ncbi_tax_id
+                )
                 if swissprots:
                     result.update(swissprots)
                     break
@@ -122,6 +131,7 @@ def _filter_organism(uniprots: set[str], ncbi_tax_id: int) -> set[str]:
     """Filter to IDs present in the organism proteome."""
     try:
         from omnipath_utils.reflists import all_uniprots
+
         proteome = all_uniprots(ncbi_tax_id)
     except Exception:
         return uniprots

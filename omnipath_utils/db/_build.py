@@ -39,20 +39,33 @@ class DatabaseBuilder:
                 info = registry.info(name)
                 existing = session.query(IdType).filter_by(name=name).first()
                 if not existing:
-                    session.add(IdType(
-                        name=name,
-                        label=info.get('label'),
-                        entity_type=info.get('entity_type'),
-                        curie_prefix=info.get('curie_prefix'),
-                    ))
+                    session.add(
+                        IdType(
+                            name=name,
+                            label=info.get('label'),
+                            entity_type=info.get('entity_type'),
+                            curie_prefix=info.get('curie_prefix'),
+                        )
+                    )
             session.commit()
 
         _log.info('Populated %d ID types', len(registry))
 
     def populate_backends(self):
         """Populate backend table."""
-        backends = ['uniprot', 'uploadlists', 'biomart', 'pro', 'unichem',
-                    'ramp', 'hmdb', 'array', 'mirbase', 'file', 'uniprot_ftp']
+        backends = [
+            'uniprot',
+            'uploadlists',
+            'biomart',
+            'pro',
+            'unichem',
+            'ramp',
+            'hmdb',
+            'array',
+            'mirbase',
+            'file',
+            'uniprot_ftp',
+        ]
 
         with Session(self.engine) as session:
             for name in backends:
@@ -70,12 +83,16 @@ class DatabaseBuilder:
 
         with Session(self.engine) as session:
             for taxid, info in orgs.items():
-                existing = session.query(Organism).filter_by(ncbi_tax_id=taxid).first()
+                existing = (
+                    session.query(Organism).filter_by(ncbi_tax_id=taxid).first()
+                )
                 if not existing:
-                    session.add(Organism(
-                        ncbi_tax_id=taxid,
-                        **{k: v for k, v in info.items() if v}
-                    ))
+                    session.add(
+                        Organism(
+                            ncbi_tax_id=taxid,
+                            **{k: v for k, v in info.items() if v},
+                        )
+                    )
             session.commit()
 
         _log.info('Populated %d organisms', len(orgs))
@@ -95,7 +112,10 @@ class DatabaseBuilder:
 
         _log.info(
             'Building mapping: %s -> %s, organism %d, backend %s',
-            id_type, target_id_type, ncbi_tax_id, backend_name,
+            id_type,
+            target_id_type,
+            ncbi_tax_id,
+            backend_name,
         )
 
         start = time.time()
@@ -103,8 +123,12 @@ class DatabaseBuilder:
         # Get type and backend IDs
         with Session(self.engine) as session:
             src_type = session.query(IdType).filter_by(name=id_type).first()
-            tgt_type = session.query(IdType).filter_by(name=target_id_type).first()
-            backend = session.query(Backend).filter_by(name=backend_name).first()
+            tgt_type = (
+                session.query(IdType).filter_by(name=target_id_type).first()
+            )
+            backend = (
+                session.query(Backend).filter_by(name=backend_name).first()
+            )
 
             if not src_type or not tgt_type or not backend:
                 _log.error('Missing ID type or backend in database')
@@ -135,12 +159,18 @@ class DatabaseBuilder:
                     ' WHERE source_type_id = :src AND target_type_id = :tgt'
                     ' AND ncbi_tax_id = :tax AND backend_id = :bk'
                 ),
-                {'src': src_type_id, 'tgt': tgt_type_id, 'tax': ncbi_tax_id, 'bk': backend_id},
+                {
+                    'src': src_type_id,
+                    'tgt': tgt_type_id,
+                    'tax': ncbi_tax_id,
+                    'bk': backend_id,
+                },
             )
             session.commit()
 
         # Bulk insert via COPY using psycopg3
         from omnipath_utils.db._connection import get_connection
+
         conn = get_connection(self._db_url)
 
         row_count = 0
@@ -150,10 +180,16 @@ class DatabaseBuilder:
             ) as copy:
                 for source_id, target_ids in data.items():
                     for target_id in target_ids:
-                        copy.write_row((
-                            src_type_id, tgt_type_id, ncbi_tax_id,
-                            source_id[:64], target_id[:64], backend_id,
-                        ))
+                        copy.write_row(
+                            (
+                                src_type_id,
+                                tgt_type_id,
+                                ncbi_tax_id,
+                                source_id[:64],
+                                target_id[:64],
+                                backend_id,
+                            )
+                        )
                         row_count += 1
 
         conn.commit()
@@ -163,21 +199,26 @@ class DatabaseBuilder:
 
         # Record build info
         with Session(self.engine) as session:
-            session.add(BuildInfo(
-                table_name='id_mapping',
-                source_type=id_type,
-                target_type=target_id_type,
-                ncbi_tax_id=ncbi_tax_id,
-                backend=backend_name,
-                row_count=row_count,
-                duration_secs=duration,
-                status='done',
-            ))
+            session.add(
+                BuildInfo(
+                    table_name='id_mapping',
+                    source_type=id_type,
+                    target_type=target_id_type,
+                    ncbi_tax_id=ncbi_tax_id,
+                    backend=backend_name,
+                    row_count=row_count,
+                    duration_secs=duration,
+                    status='done',
+                )
+            )
             session.commit()
 
         _log.info(
             'Built %s -> %s: %d rows in %.1fs',
-            id_type, target_id_type, row_count, duration,
+            id_type,
+            target_id_type,
+            row_count,
+            duration,
         )
 
     def populate_reflists(self, ncbi_tax_id: int):
@@ -192,7 +233,9 @@ class DatabaseBuilder:
         start = time.time()
 
         with Session(self.engine) as session:
-            uniprot_type = session.query(IdType).filter_by(name='uniprot').first()
+            uniprot_type = (
+                session.query(IdType).filter_by(name='uniprot').first()
+            )
             if not uniprot_type:
                 _log.error('ID type "uniprot" not found, skipping reflists')
                 return
@@ -210,11 +253,16 @@ class DatabaseBuilder:
 
         total_rows = 0
 
-        for list_name, loader in [('swissprot', all_swissprots), ('trembl', all_trembls)]:
+        for list_name, loader in [
+            ('swissprot', all_swissprots),
+            ('trembl', all_trembls),
+        ]:
             ids = loader(ncbi_tax_id)
             _log.info(
                 'Loading %d %s IDs for organism %d',
-                len(ids), list_name, ncbi_tax_id,
+                len(ids),
+                list_name,
+                ncbi_tax_id,
             )
 
             with cur.copy(
@@ -232,22 +280,26 @@ class DatabaseBuilder:
 
         # Record build info
         with Session(self.engine) as session:
-            session.add(BuildInfo(
-                table_name='reflist',
-                source_type='uniprot',
-                target_type=None,
-                ncbi_tax_id=ncbi_tax_id,
-                backend=None,
-                row_count=total_rows,
-                duration_secs=duration,
-                status='done',
-            ))
+            session.add(
+                BuildInfo(
+                    table_name='reflist',
+                    source_type='uniprot',
+                    target_type=None,
+                    ncbi_tax_id=ncbi_tax_id,
+                    backend=None,
+                    row_count=total_rows,
+                    duration_secs=duration,
+                    status='done',
+                )
+            )
             session.commit()
 
         conn.close()
         _log.info(
             'Reflists for organism %d: %d rows in %.1fs',
-            ncbi_tax_id, total_rows, duration,
+            ncbi_tax_id,
+            total_rows,
+            duration,
         )
 
     def build_reference_tables(self):
@@ -303,7 +355,9 @@ class DatabaseBuilder:
                 try:
                     self.populate_mapping(src, tgt, org, backend)
                 except Exception as e:
-                    _log.error('Failed: %s -> %s (org %d): %s', src, tgt, org, e)
+                    _log.error(
+                        'Failed: %s -> %s (org %d): %s', src, tgt, org, e
+                    )
 
         # Reference lists
         for org in organisms:
@@ -330,7 +384,9 @@ class DatabaseBuilder:
 
         # Get or create the backend ID for 'uniprot_ftp'
         with Session(self.engine) as session:
-            backend = session.query(Backend).filter_by(name='uniprot_ftp').first()
+            backend = (
+                session.query(Backend).filter_by(name='uniprot_ftp').first()
+            )
             if not backend:
                 _log.error('Backend uniprot_ftp not found in database')
                 return
@@ -345,18 +401,24 @@ class DatabaseBuilder:
             for ftp_name, canonical_name in IDTYPE_MAP.items():
                 if canonical_name.startswith('_'):  # skip _taxid etc
                     continue
-                id_type = session.query(IdType).filter_by(name=canonical_name).first()
+                id_type = (
+                    session.query(IdType).filter_by(name=canonical_name).first()
+                )
                 if id_type:
                     type_name_to_id[ftp_name] = id_type.id
 
             # We also need the 'uniprot' type ID (source side is always uniprot AC)
-            uniprot_type = session.query(IdType).filter_by(name='uniprot').first()
+            uniprot_type = (
+                session.query(IdType).filter_by(name='uniprot').first()
+            )
             if not uniprot_type:
                 _log.error('ID type "uniprot" not found')
                 return
             uniprot_type_id = uniprot_type.id
 
-        _log.info('Mapped %d FTP ID types to database IDs', len(type_name_to_id))
+        _log.info(
+            'Mapped %d FTP ID types to database IDs', len(type_name_to_id)
+        )
 
         # Connect raw psycopg for COPY
         conn = get_connection(self._db_url)
@@ -386,8 +448,12 @@ class DatabaseBuilder:
         # (to avoid holding ~250M entries in memory), then loaded into
         # the temp table in batches after the main COPY finishes.
         import tempfile
+
         taxid_file = tempfile.NamedTemporaryFile(
-            mode='w', suffix='.tsv', delete=False, prefix='taxids_',
+            mode='w',
+            suffix='.tsv',
+            delete=False,
+            prefix='taxids_',
         )
 
         # Start COPY for id_mapping
@@ -414,25 +480,32 @@ class DatabaseBuilder:
                 if not target_type_id:
                     continue
 
-                copy.write_row((
-                    uniprot_type_id,
-                    target_type_id,
-                    0,  # ncbi_tax_id filled in later
-                    uniprot_ac[:64],
-                    id_value[:64],
-                    backend_id,
-                ))
+                copy.write_row(
+                    (
+                        uniprot_type_id,
+                        target_type_id,
+                        0,  # ncbi_tax_id filled in later
+                        uniprot_ac[:64],
+                        id_value[:64],
+                        backend_id,
+                    )
+                )
                 mapping_count += 1
 
                 if mapping_count % 10_000_000 == 0:
                     _log.info(
                         'Inserted %dM mapping rows, %d taxids written',
-                        mapping_count // 1_000_000, taxid_count,
+                        mapping_count // 1_000_000,
+                        taxid_count,
                     )
 
         conn.commit()
         taxid_file.close()
-        _log.info('Inserted %d mapping rows, %d taxids to temp file', mapping_count, taxid_count)
+        _log.info(
+            'Inserted %d mapping rows, %d taxids to temp file',
+            mapping_count,
+            taxid_count,
+        )
 
         # Load taxids from temp file into temp table in batches
         _log.info('Loading taxids from %s', taxid_file.name)
@@ -453,7 +526,11 @@ class DatabaseBuilder:
                                 taxid_copy.write_row(row)
                         conn.commit()
                         loaded += len(batch)
-                        _log.info('Loaded %dM / %dM taxids', loaded // 1_000_000, taxid_count // 1_000_000)
+                        _log.info(
+                            'Loaded %dM / %dM taxids',
+                            loaded // 1_000_000,
+                            taxid_count // 1_000_000,
+                        )
                         batch = []
 
         # Flush remaining
@@ -500,16 +577,18 @@ class DatabaseBuilder:
 
         # Record in build_info
         with Session(self.engine) as session:
-            session.add(BuildInfo(
-                table_name='id_mapping',
-                source_type='uniprot (all)',
-                target_type='all FTP types',
-                ncbi_tax_id=0,
-                backend='uniprot_ftp',
-                row_count=mapping_count,
-                duration_secs=duration,
-                status='done',
-            ))
+            session.add(
+                BuildInfo(
+                    table_name='id_mapping',
+                    source_type='uniprot (all)',
+                    target_type='all FTP types',
+                    ncbi_tax_id=0,
+                    backend='uniprot_ftp',
+                    row_count=mapping_count,
+                    duration_secs=duration,
+                    status='done',
+                )
+            )
             session.commit()
 
         conn.close()

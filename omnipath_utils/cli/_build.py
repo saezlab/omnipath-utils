@@ -8,14 +8,29 @@ import argparse
 
 def build_cmd(args: list[str]):
     """Execute the build command."""
-    parser = argparse.ArgumentParser(description='Build omnipath-utils database')
-    parser.add_argument('--db-url', default=None, help='PostgreSQL connection URL')
-    parser.add_argument('--organisms', nargs='+', type=int, default=[9606],
-                        help='NCBI Taxonomy IDs to build for (default: 9606)')
-    parser.add_argument('--ref-only', action='store_true',
-                        help='Only build reference tables (id_types, organisms, backends)')
-    parser.add_argument('--ftp', action='store_true',
-                        help='Build from full UniProt FTP idmapping.dat.gz (all organisms, ~18GB)')
+    parser = argparse.ArgumentParser(
+        description='Build omnipath-utils database'
+    )
+    parser.add_argument(
+        '--db-url', default=None, help='PostgreSQL connection URL'
+    )
+    parser.add_argument(
+        '--organisms',
+        nargs='+',
+        type=int,
+        default=[9606],
+        help='NCBI Taxonomy IDs to build for (default: 9606)',
+    )
+    parser.add_argument(
+        '--ref-only',
+        action='store_true',
+        help='Only build reference tables (id_types, organisms, backends)',
+    )
+    parser.add_argument(
+        '--ftp',
+        action='store_true',
+        help='Build from full UniProt FTP idmapping.dat.gz (all organisms, ~18GB)',
+    )
     parser.add_argument('-v', '--verbose', action='store_true')
 
     opts = parser.parse_args(args)

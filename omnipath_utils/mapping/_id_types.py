@@ -42,7 +42,6 @@ class IdTypeRegistry:
         self._by_backend: dict[str, dict[str, str]] = {}
 
         for name, info in self._types.items():
-
             # Index aliases
             for alias in info.get('aliases', []):
                 self._by_alias[alias] = name
@@ -178,8 +177,7 @@ class IdTypeRegistry:
         return {
             name: info['backends'][backend]
             for name, info in self._types.items()
-            if backend in info.get('backends', {})
-            and info['backends'][backend]
+            if backend in info.get('backends', {}) and info['backends'][backend]
         }
 
     def all_names(self) -> list[str]:

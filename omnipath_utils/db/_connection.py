@@ -7,7 +7,9 @@ import logging
 
 _log = logging.getLogger(__name__)
 
-DEFAULT_DB_URL = 'postgresql+psycopg://postgres:dev@localhost:5433/omnipath_utils'
+DEFAULT_DB_URL = (
+    'postgresql+psycopg://postgres:dev@localhost:5433/omnipath_utils'
+)
 SCHEMA = 'omnipath_utils'
 
 
@@ -19,6 +21,7 @@ def get_db_url() -> str:
 def get_engine(db_url: str | None = None, echo: bool = False):
     """Create SQLAlchemy engine."""
     from sqlalchemy import create_engine
+
     url = db_url or get_db_url()
     _log.info('Connecting to %s', url.split('@')[-1])  # hide password
     return create_engine(url, echo=echo)
@@ -32,6 +35,7 @@ def get_connection(db_url: str | None = None):
     ``postgresql://`` so that plain psycopg can parse it.
     """
     import psycopg
+
     url = db_url or get_db_url()
     url = url.replace('postgresql+psycopg://', 'postgresql://')
     return psycopg.connect(url)
@@ -40,6 +44,7 @@ def get_connection(db_url: str | None = None):
 def ensure_schema(engine):
     """Create the omnipath_utils schema if it doesn't exist."""
     from sqlalchemy import text
+
     with engine.connect() as conn:
         conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS {SCHEMA}'))
         conn.commit()

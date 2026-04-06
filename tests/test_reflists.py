@@ -6,7 +6,6 @@ from omnipath_utils.reflists._manager import ReferenceListManager
 
 
 class TestReferenceListManager:
-
     def setup_method(self):
         ReferenceListManager._instance = None
 

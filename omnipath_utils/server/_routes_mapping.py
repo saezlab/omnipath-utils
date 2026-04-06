@@ -27,7 +27,6 @@ def _resolve_and_cleanup(
     target_resolved = reg.resolve(target_id_type) or target_id_type
 
     if target_resolved == 'uniprot':
-
         try:
             from omnipath_utils.mapping._mapper import Mapper
             from omnipath_utils.mapping._cleanup import uniprot_cleanup
@@ -37,12 +36,13 @@ def _resolve_and_cleanup(
             for src_id in result:
                 if result[src_id]:
                     result[src_id] = uniprot_cleanup(
-                        result[src_id], ncbi_tax_id, mapper=mapper,
+                        result[src_id],
+                        ncbi_tax_id,
+                        mapper=mapper,
                     )
         except Exception:
             _log.debug(
-                'UniProt cleanup failed for target %s, '
-                'returning raw results.',
+                'UniProt cleanup failed for target %s, returning raw results.',
                 target_id_type,
                 exc_info=True,
             )
@@ -81,8 +81,11 @@ def _apply_fallbacks(
 
             if upper_ids:
                 upper_result = translate_ids(
-                    session, upper_ids, id_type_resolved,
-                    target_resolved, ncbi_tax_id,
+                    session,
+                    upper_ids,
+                    id_type_resolved,
+                    target_resolved,
+                    ncbi_tax_id,
                 )
                 for upper, targets in upper_result.items():
                     if targets and upper in upper_map:
@@ -101,8 +104,11 @@ def _apply_fallbacks(
 
                 if cap_ids:
                     cap_result = translate_ids(
-                        session, cap_ids, id_type_resolved,
-                        target_resolved, ncbi_tax_id,
+                        session,
+                        cap_ids,
+                        id_type_resolved,
+                        target_resolved,
+                        ncbi_tax_id,
                     )
                     for cap, targets in cap_result.items():
                         if targets and cap in cap_map:
@@ -112,8 +118,11 @@ def _apply_fallbacks(
             still_unmapped = [i for i in unmapped if not result.get(i)]
             if still_unmapped:
                 syn_result = translate_ids(
-                    session, still_unmapped, 'genesymbol-syn',
-                    target_resolved, ncbi_tax_id,
+                    session,
+                    still_unmapped,
+                    'genesymbol-syn',
+                    target_resolved,
+                    ncbi_tax_id,
                 )
                 for src, targets in syn_result.items():
                     if targets:
@@ -126,8 +135,11 @@ def _apply_fallbacks(
                 if still_unmapped:
                     upper_syns = [n.upper() for n in still_unmapped]
                     syn_upper = translate_ids(
-                        session, upper_syns, 'genesymbol-syn',
-                        target_resolved, ncbi_tax_id,
+                        session,
+                        upper_syns,
+                        'genesymbol-syn',
+                        target_resolved,
+                        ncbi_tax_id,
                     )
                     for idx, name in enumerate(still_unmapped):
                         upper = upper_syns[idx]
@@ -142,14 +154,20 @@ def _apply_fallbacks(
         and target_resolved != 'uniprot'
     ):
         intermediate = translate_ids(
-            session, still_unmapped, id_type_resolved,
-            'uniprot', ncbi_tax_id,
+            session,
+            still_unmapped,
+            id_type_resolved,
+            'uniprot',
+            ncbi_tax_id,
         )
         for src, uniprots in intermediate.items():
             if uniprots:
                 final = translate_ids(
-                    session, list(uniprots), 'uniprot',
-                    target_resolved, ncbi_tax_id,
+                    session,
+                    list(uniprots),
+                    'uniprot',
+                    target_resolved,
+                    ncbi_tax_id,
                 )
                 targets = set()
                 for t in final.values():
@@ -205,9 +223,7 @@ class MappingController(Controller):
         id_type_resolved = reg.resolve(id_type) or id_type
         target_resolved = reg.resolve(target_id_type) or target_id_type
 
-        id_list = [
-            i.strip() for i in identifiers.split(',') if i.strip()
-        ]
+        id_list = [i.strip() for i in identifiers.split(',') if i.strip()]
 
         result = translate_ids(
             session,
@@ -219,17 +235,22 @@ class MappingController(Controller):
 
         if not raw:
             result = _apply_fallbacks(
-                session, id_list, id_type_resolved,
-                target_resolved, ncbi_tax_id, result,
+                session,
+                id_list,
+                id_type_resolved,
+                target_resolved,
+                ncbi_tax_id,
+                result,
             )
             result = _resolve_and_cleanup(
-                result, id_type_resolved, target_resolved, ncbi_tax_id,
+                result,
+                id_type_resolved,
+                target_resolved,
+                ncbi_tax_id,
             )
 
         mapped = {k: sorted(v) for k, v in result.items() if v}
-        unmapped = [
-            i for i in id_list if i not in result or not result[i]
-        ]
+        unmapped = [i for i in id_list if i not in result or not result[i]]
 
         return {
             'results': mapped,
@@ -286,17 +307,22 @@ class MappingController(Controller):
 
         if not raw:
             result = _apply_fallbacks(
-                session, id_list, id_type_resolved,
-                target_resolved, ncbi_tax_id, result,
+                session,
+                id_list,
+                id_type_resolved,
+                target_resolved,
+                ncbi_tax_id,
+                result,
             )
             result = _resolve_and_cleanup(
-                result, id_type_resolved, target_resolved, ncbi_tax_id,
+                result,
+                id_type_resolved,
+                target_resolved,
+                ncbi_tax_id,
             )
 
         mapped = {k: sorted(v) for k, v in result.items() if v}
-        unmapped = [
-            i for i in id_list if i not in result or not result[i]
-        ]
+        unmapped = [i for i in id_list if i not in result or not result[i]]
 
         return {
             'results': mapped,

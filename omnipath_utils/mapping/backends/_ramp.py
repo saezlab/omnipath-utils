@@ -48,6 +48,7 @@ class RampBackend(MappingBackend):
                         data.setdefault(k, set()).update(v)
             elif id_type == 'synonym':
                 from pkg_infra.utils import swap_dict
+
                 syn_data = ramp_synonym_mapping(target_id_type)
                 if syn_data:
                     swapped = swap_dict(syn_data, force_sets=True)

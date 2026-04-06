@@ -35,20 +35,28 @@ def map_genesymbol_fallbacks(
     # 1. Direct lookup (already tried by caller)
 
     # 2. Try uppercase
-    result = mapper._direct_lookup(name.upper(), 'genesymbol', target_id_type, ncbi_tax_id)
+    result = mapper._direct_lookup(
+        name.upper(), 'genesymbol', target_id_type, ncbi_tax_id
+    )
     if result:
         return result
 
     # 3. Try capitalized (first letter upper, rest lower)
-    result = mapper._direct_lookup(name.capitalize(), 'genesymbol', target_id_type, ncbi_tax_id)
+    result = mapper._direct_lookup(
+        name.capitalize(), 'genesymbol', target_id_type, ncbi_tax_id
+    )
     if result:
         return result
 
     # 4. Try gene symbol synonyms
-    result = mapper._direct_lookup(name, 'genesymbol-syn', target_id_type, ncbi_tax_id)
+    result = mapper._direct_lookup(
+        name, 'genesymbol-syn', target_id_type, ncbi_tax_id
+    )
     if result:
         return result
-    result = mapper._direct_lookup(name.upper(), 'genesymbol-syn', target_id_type, ncbi_tax_id)
+    result = mapper._direct_lookup(
+        name.upper(), 'genesymbol-syn', target_id_type, ncbi_tax_id
+    )
     if result:
         return result
 
@@ -56,7 +64,9 @@ def map_genesymbol_fallbacks(
         return set()
 
     # 5. Try with "1" appended (for isoform suffixes)
-    result = mapper._direct_lookup(f'{name}1', 'genesymbol', target_id_type, ncbi_tax_id)
+    result = mapper._direct_lookup(
+        f'{name}1', 'genesymbol', target_id_type, ncbi_tax_id
+    )
     if result:
         return result
 
@@ -81,7 +91,9 @@ def map_refseq(
     # Try without version number
     if '.' in name:
         base = name.rsplit('.', 1)[0]
-        result = mapper._direct_lookup(base, id_type, target_id_type, ncbi_tax_id)
+        result = mapper._direct_lookup(
+            base, id_type, target_id_type, ncbi_tax_id
+        )
         if result:
             return result
 
@@ -91,7 +103,9 @@ def map_refseq(
     # Try common version numbers
     base = name.split('.')[0] if '.' in name else name
     for ver in range(1, 20):
-        result = mapper._direct_lookup(f'{base}.{ver}', id_type, target_id_type, ncbi_tax_id)
+        result = mapper._direct_lookup(
+            f'{base}.{ver}', id_type, target_id_type, ncbi_tax_id
+        )
         if result:
             return result
 
@@ -131,7 +145,9 @@ def chain_map(
 
     result = set()
     for intermediate in intermediates:
-        targets = mapper.map_name(intermediate, via, target_id_type, ncbi_tax_id)
+        targets = mapper.map_name(
+            intermediate, via, target_id_type, ncbi_tax_id
+        )
         result.update(targets)
 
     return result
@@ -176,7 +192,9 @@ def map_mirna_fallback(
         # Chain: accession -> target
         result = set()
         for acc in accessions:
-            targets = mapper._direct_lookup(acc, inter_b, target_id_type, ncbi_tax_id)
+            targets = mapper._direct_lookup(
+                acc, inter_b, target_id_type, ncbi_tax_id
+            )
             result.update(targets)
 
         if result:

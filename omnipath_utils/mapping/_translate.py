@@ -50,7 +50,10 @@ def translate_core(
     if raw:
         # Raw mode: direct table lookup only, no fallbacks
         table = mapper.which_table(
-            id_type, target_id_type, ncbi_tax_id, backend=backend,
+            id_type,
+            target_id_type,
+            ncbi_tax_id,
+            backend=backend,
         )
         if table:
             return {name: table[name] for name in identifiers}
@@ -59,7 +62,10 @@ def translate_core(
     # Full mode: use map_name per ID (includes all special cases)
     # For vectorized performance, try table lookup first for the batch
     table = mapper.which_table(
-        id_type, target_id_type, ncbi_tax_id, backend=backend,
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
+        backend=backend,
     )
 
     result = {}
@@ -79,7 +85,10 @@ def translate_core(
     if needs_fallback:
         for name in needs_fallback:
             result[name] = mapper.map_name(
-                name, id_type, target_id_type, ncbi_tax_id,
+                name,
+                id_type,
+                target_id_type,
+                ncbi_tax_id,
                 strict=strict,
                 uniprot_cleanup_flag=uniprot_cleanup,
             )
@@ -90,10 +99,13 @@ def translate_core(
         from omnipath_utils.mapping._cleanup import (
             uniprot_cleanup as _cleanup,
         )
+
         for name in identifiers:
             if name in result and result[name] and name not in needs_fallback:
                 result[name] = _cleanup(
-                    result[name], ncbi_tax_id, mapper=mapper,
+                    result[name],
+                    ncbi_tax_id,
+                    mapper=mapper,
                 )
 
     return result

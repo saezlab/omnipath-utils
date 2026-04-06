@@ -11,7 +11,6 @@ def registry():
 
 
 class TestIdTypeRegistry:
-
     def test_loads_types(self, registry):
         assert len(registry) > 50
 

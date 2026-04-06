@@ -29,7 +29,9 @@ class TestTranslateCore:
         Mapper._instance = mapper
 
         result = translate_core(
-            ['P04637', 'P00533'], 'uniprot', 'genesymbol',
+            ['P04637', 'P00533'],
+            'uniprot',
+            'genesymbol',
         )
         assert result['P04637'] == {'TP53'}
         assert result['P00533'] == {'EGFR'}
@@ -50,7 +52,10 @@ class TestTranslateCore:
 
         # Raw mode: "tp53" (lowercase) should NOT trigger case fallback
         result = translate_core(
-            ['tp53'], 'genesymbol', 'uniprot', raw=True,
+            ['tp53'],
+            'genesymbol',
+            'uniprot',
+            raw=True,
         )
         # Direct lookup for "tp53" in the table returns empty
         assert result['tp53'] == set()
@@ -71,7 +76,10 @@ class TestTranslateCore:
 
         # Raw mode: exact match should still work
         result = translate_core(
-            ['TP53'], 'genesymbol', 'uniprot', raw=True,
+            ['TP53'],
+            'genesymbol',
+            'uniprot',
+            raw=True,
         )
         assert result['TP53'] == {'P04637'}
 
@@ -82,7 +90,10 @@ class TestTranslateCore:
         Mapper._instance = mapper
 
         result = translate_core(
-            ['TP53'], 'genesymbol', 'uniprot', raw=True,
+            ['TP53'],
+            'genesymbol',
+            'uniprot',
+            raw=True,
         )
         assert result['TP53'] == set()
 
@@ -104,7 +115,9 @@ class TestTranslateCore:
         # map_name fallback. Since no other tables are loaded,
         # it will return empty.
         result = translate_core(
-            ['TP53', 'EGFR'], 'genesymbol', 'uniprot',
+            ['TP53', 'EGFR'],
+            'genesymbol',
+            'uniprot',
         )
         assert result['TP53'] == {'P04637'}
         # EGFR goes through map_name which won't find it either
@@ -131,7 +144,8 @@ class TestTranslateCore:
         # All IDs are in the table, no fallback needed
         result = translate_core(
             ['P04637', 'P00533', 'P38398'],
-            'uniprot', 'genesymbol',
+            'uniprot',
+            'genesymbol',
         )
         assert result['P04637'] == {'TP53'}
         assert result['P00533'] == {'EGFR'}
@@ -151,10 +165,16 @@ class TestWhichTableBackend:
         Mapper._instance = mapper
 
         mapper.which_table(
-            'uniprot', 'genesymbol', 9606, backend='biomart',
+            'uniprot',
+            'genesymbol',
+            9606,
+            backend='biomart',
         )
         mock_load.assert_called_once_with(
-            'uniprot', 'genesymbol', 9606, backend='biomart',
+            'uniprot',
+            'genesymbol',
+            9606,
+            backend='biomart',
         )
 
     @patch('omnipath_utils.mapping._mapper.Mapper._load_table')
@@ -175,7 +195,10 @@ class TestWhichTableBackend:
 
         # With backend specified, should force reload
         mapper.which_table(
-            'uniprot', 'genesymbol', 9606, backend='biomart',
+            'uniprot',
+            'genesymbol',
+            9606,
+            backend='biomart',
         )
         mock_load.assert_called_once()
 
@@ -221,7 +244,9 @@ class TestPublicAPIParameters:
         mock_core.return_value = {'TP53': {'P04637'}}
         from omnipath_utils.mapping import translate
 
-        translate(['TP53'], 'genesymbol', 'uniprot', raw=True, backend='uniprot')
+        translate(
+            ['TP53'], 'genesymbol', 'uniprot', raw=True, backend='uniprot'
+        )
 
         mock_core.assert_called_once()
         call_kwargs = mock_core.call_args
@@ -233,7 +258,9 @@ class TestPublicAPIParameters:
         mock_core.return_value = {'TP53': {'P04637'}}
         from omnipath_utils.mapping import map_names
 
-        map_names(['TP53'], 'genesymbol', 'uniprot', raw=True, backend='biomart')
+        map_names(
+            ['TP53'], 'genesymbol', 'uniprot', raw=True, backend='biomart'
+        )
 
         mock_core.assert_called_once()
         call_kwargs = mock_core.call_args
@@ -253,6 +280,7 @@ class TestPublicAPIParameters:
     @patch('omnipath_utils.mapping._translate.translate_core')
     def test_translate_column_passes_raw_and_backend(self, mock_core):
         import pandas as pd
+
         mock_core.return_value = {'P04637': {'TP53'}}
         from omnipath_utils.mapping import translate_column
 
@@ -261,8 +289,12 @@ class TestPublicAPIParameters:
 
         df = pd.DataFrame({'protein': ['P04637']})
         translate_column(
-            df, 'protein', 'uniprot', 'genesymbol',
-            raw=True, backend='biomart',
+            df,
+            'protein',
+            'uniprot',
+            'genesymbol',
+            raw=True,
+            backend='biomart',
         )
 
         mock_core.assert_called_once()
@@ -293,8 +325,12 @@ class TestRESTFallbacks:
         ):
             result = {}
             result = _apply_fallbacks(
-                mock_session, ['tp53'], 'genesymbol',
-                'uniprot', 9606, result,
+                mock_session,
+                ['tp53'],
+                'genesymbol',
+                'uniprot',
+                9606,
+                result,
             )
 
         assert result.get('tp53') == {'P04637'}
@@ -321,8 +357,12 @@ class TestRESTFallbacks:
         ):
             result = {}
             result = _apply_fallbacks(
-                mock_session, ['7157'], 'entrez',
-                'genesymbol', 9606, result,
+                mock_session,
+                ['7157'],
+                'entrez',
+                'genesymbol',
+                9606,
+                result,
             )
 
         assert result.get('7157') == {'TP53'}

@@ -42,9 +42,15 @@ class MirBaseBackend(MappingBackend):
         # mirbase_mature: (accession, name) => mirbase -> mir-mat-name
         # mirbase_precursor_to_mature: (pre_name, mat_name) => mir-pre -> mir-mat-name
         _TABLES = {
-            ('mirbase', 'mir-pre'): lambda org: mirbase_input.mirbase_precursor(org),
-            ('mirbase', 'mir-mat-name'): lambda org: mirbase_input.mirbase_mature(org),
-            ('mir-pre', 'mir-mat-name'): lambda org: mirbase_input.mirbase_precursor_to_mature(org),
+            ('mirbase', 'mir-pre'): lambda org: mirbase_input.mirbase_precursor(
+                org
+            ),
+            ('mirbase', 'mir-mat-name'): lambda org: (
+                mirbase_input.mirbase_mature(org)
+            ),
+            ('mir-pre', 'mir-mat-name'): lambda org: (
+                mirbase_input.mirbase_precursor_to_mature(org)
+            ),
         }
 
         key = (id_type, target_id_type)

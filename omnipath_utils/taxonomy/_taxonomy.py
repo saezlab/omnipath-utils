@@ -38,9 +38,7 @@ class TaxonomyManager:
 
     def __init__(self) -> None:
         raw = load('organisms.yaml', module='omnipath_utils')
-        self._by_taxid: dict[int, dict] = {
-            int(k): v for k, v in raw.items()
-        }
+        self._by_taxid: dict[int, dict] = {int(k): v for k, v in raw.items()}
         self._build_indices()
 
     @classmethod
@@ -58,7 +56,6 @@ class TaxonomyManager:
         self._to_taxid: dict[str, int] = {}
 
         for taxid, info in self._by_taxid.items():
-
             for field in (
                 'common_name',
                 'latin_name',
@@ -70,7 +67,6 @@ class TaxonomyManager:
                 'uniprot_code',
                 'dbptm_code',
             ):
-
                 val = info.get(field, '')
 
                 if val:
@@ -97,7 +93,6 @@ class TaxonomyManager:
             return taxon if taxon in self._by_taxid else None
 
         if isinstance(taxon, str):
-
             # Try as integer string
             try:
                 tid = int(taxon)

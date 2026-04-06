@@ -44,7 +44,16 @@ class UniProtFTPBackend(MappingBackend):
     name = 'uniprot_ftp'
     yaml_key = 'uniprot'  # uses same columns as the REST backend
 
-    def _read_via_pypath(self, id_type, target_id_type, ncbi_tax_id, *, src_col, tgt_col, **kwargs):
+    def _read_via_pypath(
+        self,
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
+        *,
+        src_col,
+        tgt_col,
+        **kwargs,
+    ):
         from pkg_infra.utils import swap_dict
 
         # Determine which side is the UniProt AC and which is the other ID type
@@ -65,7 +74,16 @@ class UniProtFTPBackend(MappingBackend):
         else:
             return {}
 
-    def _read_direct(self, id_type, target_id_type, ncbi_tax_id, *, src_col, tgt_col, **kwargs):
+    def _read_direct(
+        self,
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
+        *,
+        src_col,
+        tgt_col,
+        **kwargs,
+    ):
         # The FTP backend always needs the pypath input module for download
         # Fall back: use requests to download directly
         import os
@@ -100,7 +118,9 @@ class UniProtFTPBackend(MappingBackend):
                 resp = requests.get(url, timeout=(10, 600), stream=True)
                 resp.raise_for_status()
 
-                with tempfile.NamedTemporaryFile(suffix='.dat.gz', delete=False) as tmp:
+                with tempfile.NamedTemporaryFile(
+                    suffix='.dat.gz', delete=False
+                ) as tmp:
                     for chunk in resp.iter_content(chunk_size=8192):
                         tmp.write(chunk)
                     tmp_path = tmp.name
@@ -138,10 +158,18 @@ class UniProtFTPBackend(MappingBackend):
     )
     _IDMAPPING_PATH = 'current_release/knowledgebase/idmapping'
     _CODES = {
-        9606: 'HUMAN', 10090: 'MOUSE', 10116: 'RAT',
-        559292: 'YEAST', 83333: 'ECOLI', 7227: 'DROME',
-        7955: 'DANRE', 6239: 'CAEEL', 9031: 'CHICK',
-        3702: 'ARATH', 44689: 'DICDI', 284812: 'SCHPO',
+        9606: 'HUMAN',
+        10090: 'MOUSE',
+        10116: 'RAT',
+        559292: 'YEAST',
+        83333: 'ECOLI',
+        7227: 'DROME',
+        7955: 'DANRE',
+        6239: 'CAEEL',
+        9031: 'CHICK',
+        3702: 'ARATH',
+        44689: 'DICDI',
+        284812: 'SCHPO',
     }
 
     @classmethod
@@ -158,6 +186,7 @@ class UniProtFTPBackend(MappingBackend):
     @staticmethod
     def _load_mapping(ftp_type: str, ncbi_tax_id: int) -> dict[str, set[str]]:
         from pypath.inputs.uniprot_ftp import idmapping
+
         return idmapping(ftp_type, ncbi_tax_id)
 
 

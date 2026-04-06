@@ -80,11 +80,7 @@ class BioMartBackend(MappingBackend):
         if not dataset:
             return {}
 
-        attrs = (
-            [src_col, tgt_col]
-            if src_col != tgt_col
-            else [src_col]
-        )
+        attrs = [src_col, tgt_col] if src_col != tgt_col else [src_col]
 
         _log.info(
             'BioMart query (pypath): attrs=%s, dataset=%s',
@@ -126,11 +122,7 @@ class BioMartBackend(MappingBackend):
         if not dataset:
             return {}
 
-        attrs = (
-            [src_col, tgt_col]
-            if src_col != tgt_col
-            else [src_col]
-        )
+        attrs = [src_col, tgt_col] if src_col != tgt_col else [src_col]
         attr_xml = '\n        '.join(
             ATTR_TEMPLATE.format(name=a) for a in attrs
         )

@@ -55,8 +55,13 @@ def map_name(
     from omnipath_utils.mapping._translate import translate_core
 
     result = translate_core(
-        [name], id_type, target_id_type, ncbi_tax_id,
-        strict=strict, raw=raw, backend=backend,
+        [name],
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
+        strict=strict,
+        raw=raw,
+        backend=backend,
     )
     return result.get(name, set())
 
@@ -86,8 +91,12 @@ def map_names(
     from omnipath_utils.mapping._translate import translate_core
 
     result = translate_core(
-        list(names), id_type, target_id_type, ncbi_tax_id,
-        raw=raw, backend=backend,
+        list(names),
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
+        raw=raw,
+        backend=backend,
     )
     merged = set()
     for targets in result.values():
@@ -118,8 +127,12 @@ def map_name0(
     """
 
     result = map_name(
-        name, id_type, target_id_type, ncbi_tax_id,
-        raw=raw, backend=backend,
+        name,
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
+        raw=raw,
+        backend=backend,
     )
     return next(iter(result)) if result else None
 
@@ -153,8 +166,12 @@ def translate(
     from omnipath_utils.mapping._translate import translate_core
 
     return translate_core(
-        list(identifiers), id_type, target_id_type, ncbi_tax_id,
-        raw=raw, backend=backend,
+        list(identifiers),
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
+        raw=raw,
+        backend=backend,
     )
 
 
@@ -166,7 +183,9 @@ def translation_table(
     """Get the full translation table."""
 
     return Mapper.get().translation_table(
-        id_type, target_id_type, ncbi_tax_id,
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
     )
 
 
@@ -227,22 +246,26 @@ def translate_column(
     new_col = new_column or target_id_type
 
     # Get unique IDs for batch translation
-    unique_ids = [
-        str(v) for v in df[column].dropna().unique()
-    ]
+    unique_ids = [str(v) for v in df[column].dropna().unique()]
 
     trans = translate_core(
-        unique_ids, id_type, target_id_type, ncbi_tax_id,
-        raw=raw, backend=backend,
+        unique_ids,
+        id_type,
+        target_id_type,
+        ncbi_tax_id,
+        raw=raw,
+        backend=backend,
     )
 
     if expand:
         # Map each value to a list of targets
         df = df.copy()
         df['_targets'] = df[column].map(
-            lambda x: sorted(trans.get(x, set()))
-            if x and trans.get(x)
-            else ([None] if keep_untranslated else [])
+            lambda x: (
+                sorted(trans.get(x, set()))
+                if x and trans.get(x)
+                else ([None] if keep_untranslated else [])
+            )
         )
         # Explode to multiple rows
         df = df.explode('_targets').rename(
@@ -257,9 +280,9 @@ def translate_column(
         # Pick first result
         df = df.copy()
         df[new_col] = df[column].map(
-            lambda x: next(iter(trans.get(x, set())))
-            if x and trans.get(x)
-            else None
+            lambda x: (
+                next(iter(trans.get(x, set()))) if x and trans.get(x) else None
+            )
         )
 
         if not keep_untranslated:
@@ -307,7 +330,10 @@ def translate_columns(
         col, src, tgt = t[0], t[1], t[2]
         new_col = t[3] if len(t) > 3 else None
         df = translate_column(
-            df, col, src, tgt,
+            df,
+            col,
+            src,
+            tgt,
             ncbi_tax_id=ncbi_tax_id,
             new_column=new_col,
             keep_untranslated=keep_untranslated,

@@ -158,7 +158,11 @@ class TestBackendSelection:
 
         # No tables preloaded -- with raw=True and no table, should return empty
         result = translate(
-            ['TP53'], 'genesymbol', 'uniprot', raw=True, backend='nonexistent',
+            ['TP53'],
+            'genesymbol',
+            'uniprot',
+            raw=True,
+            backend='nonexistent',
         )
         assert result == {'TP53': set()}
 
@@ -180,7 +184,10 @@ class TestBackendSelection:
 
         # With backend specified, should call _load_table even though cached
         mapper.which_table(
-            'uniprot', 'genesymbol', 9606, backend='biomart',
+            'uniprot',
+            'genesymbol',
+            9606,
+            backend='biomart',
         )
         mock_load.assert_called_once()
 
@@ -235,7 +242,6 @@ class TestSwissProtTremblTargets:
 
 
 class TestTranslateColumnParams:
-
     def setup_method(self):
         Mapper._instance = None
 
@@ -259,9 +265,16 @@ class TestTranslateColumnParams:
 
         # Raw mode: tp53 (lowercase) should not match
         result = translate_column(
-            df, 'gene', 'genesymbol', 'uniprot', raw=True, expand=False,
+            df,
+            'gene',
+            'genesymbol',
+            'uniprot',
+            raw=True,
+            expand=False,
         )
-        assert result.loc[result['gene'] == 'TP53', 'uniprot'].iloc[0] == 'P04637'
+        assert (
+            result.loc[result['gene'] == 'TP53', 'uniprot'].iloc[0] == 'P04637'
+        )
         assert pd.isna(result.loc[result['gene'] == 'tp53', 'uniprot'].iloc[0])
 
     @patch('omnipath_utils.mapping._mapper.Mapper._load_table')

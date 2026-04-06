@@ -98,16 +98,25 @@ def translate_column(
     # Get translation dict
     source_ids = df[column].dropna().unique().tolist()
     trans = translate(
-        source_ids, source=source, target=target, id_type=id_type,
-        only_swissprot=only_swissprot, resource=resource,
+        source_ids,
+        source=source,
+        target=target,
+        id_type=id_type,
+        only_swissprot=only_swissprot,
+        resource=resource,
         min_sources=min_sources,
     )
 
     if expand:
         df = df.copy()
         df['_orthologs'] = df[column].map(
-            lambda x: sorted(trans.get(x, set())) if x and trans.get(x)
-            else [None] if keep_untranslated else []
+            lambda x: (
+                sorted(trans.get(x, set()))
+                if x and trans.get(x)
+                else [None]
+                if keep_untranslated
+                else []
+            )
         )
         df = df.explode('_orthologs').rename(columns={'_orthologs': new_col})
         if not keep_untranslated:
@@ -116,7 +125,9 @@ def translate_column(
     else:
         df = df.copy()
         df[new_col] = df[column].map(
-            lambda x: next(iter(trans.get(x, set()))) if x and trans.get(x) else None
+            lambda x: (
+                next(iter(trans.get(x, set()))) if x and trans.get(x) else None
+            )
         )
         if not keep_untranslated:
             df = df.dropna(subset=[new_col])
@@ -133,7 +144,11 @@ def get_table(
 ) -> dict[str, set[str]]:
     """Get the full orthology table for a pair of organisms."""
     from omnipath_utils.orthology._manager import OrthologyManager
+
     return OrthologyManager.get().get_table(
-        source=source, target=target, id_type=id_type,
-        resource=resource, min_sources=min_sources,
+        source=source,
+        target=target,
+        id_type=id_type,
+        resource=resource,
+        min_sources=min_sources,
     )

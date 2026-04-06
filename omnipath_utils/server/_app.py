@@ -83,15 +83,26 @@ async def health_check(session: Session) -> dict:
     builds = []
 
     try:
-        for table in ('id_type', 'backend', 'organism', 'id_mapping', 'reflist', 'build_info'):
-            row = session.execute(text(f'SELECT count(*) FROM {SCHEMA}.{table}')).scalar()
+        for table in (
+            'id_type',
+            'backend',
+            'organism',
+            'id_mapping',
+            'reflist',
+            'build_info',
+        ):
+            row = session.execute(
+                text(f'SELECT count(*) FROM {SCHEMA}.{table}')
+            ).scalar()
             stats[table] = row
         db_status = 'connected'
     except Exception as e:
         db_status = f'error: {e}'
 
     try:
-        rows = session.execute(text(f'SELECT name FROM {SCHEMA}.backend ORDER BY name')).fetchall()
+        rows = session.execute(
+            text(f'SELECT name FROM {SCHEMA}.backend ORDER BY name')
+        ).fetchall()
         backends = [r[0] for r in rows]
     except Exception:
         pass
@@ -105,16 +116,18 @@ async def health_check(session: Session) -> dict:
             )
         ).fetchall()
         for r in rows:
-            builds.append({
-                'source_type': r[0],
-                'target_type': r[1],
-                'ncbi_tax_id': r[2],
-                'backend': r[3],
-                'row_count': r[4],
-                'built_at': r[5].isoformat() if r[5] else None,
-                'duration_secs': float(r[6]) if r[6] is not None else None,
-                'status': r[7],
-            })
+            builds.append(
+                {
+                    'source_type': r[0],
+                    'target_type': r[1],
+                    'ncbi_tax_id': r[2],
+                    'backend': r[3],
+                    'row_count': r[4],
+                    'built_at': r[5].isoformat() if r[5] else None,
+                    'duration_secs': float(r[6]) if r[6] is not None else None,
+                    'status': r[7],
+                }
+            )
     except Exception:
         pass
 

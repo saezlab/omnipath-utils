@@ -55,7 +55,6 @@ def client(app):
 
 
 class TestHealthEndpoint:
-
     def test_health(self, client):
         resp = client.get('/health')
         assert resp.status_code == 200
@@ -68,7 +67,6 @@ class TestHealthEndpoint:
 
 
 class TestTaxonomyEndpoints:
-
     def test_resolve_human(self, client):
         resp = client.get('/taxonomy/resolve', params={'organism': 'human'})
         assert resp.status_code == 200
@@ -97,7 +95,6 @@ class TestTaxonomyEndpoints:
 
 
 class TestMappingEndpoints:
-
     def test_id_types(self, client):
         resp = client.get('/mapping/id-types')
         assert resp.status_code == 200
@@ -109,27 +106,32 @@ class TestMappingEndpoints:
     @patch('omnipath_utils.server._routes_mapping.translate_ids')
     def test_translate_get(self, mock_translate, client):
         mock_translate.return_value = {'TP53': {'P04637'}}
-        resp = client.get('/mapping/translate', params={
-            'identifiers': 'TP53',
-            'id_type': 'genesymbol',
-            'target_id_type': 'uniprot',
-        })
+        resp = client.get(
+            '/mapping/translate',
+            params={
+                'identifiers': 'TP53',
+                'id_type': 'genesymbol',
+                'target_id_type': 'uniprot',
+            },
+        )
         assert resp.status_code == 200
         assert 'results' in resp.json()
 
     @patch('omnipath_utils.server._routes_mapping.translate_ids')
     def test_translate_post(self, mock_translate, client):
         mock_translate.return_value = {'TP53': {'P04637'}}
-        resp = client.post('/mapping/translate', json={
-            'identifiers': ['TP53'],
-            'id_type': 'genesymbol',
-            'target_id_type': 'uniprot',
-        })
+        resp = client.post(
+            '/mapping/translate',
+            json={
+                'identifiers': ['TP53'],
+                'id_type': 'genesymbol',
+                'target_id_type': 'uniprot',
+            },
+        )
         assert resp.status_code in (200, 201)
 
 
 class TestReflistEndpoints:
-
     def test_list_names(self, client):
         resp = client.get('/reflists/list-names')
         assert resp.status_code == 200
@@ -137,7 +139,6 @@ class TestReflistEndpoints:
 
 
 class TestRESTParams:
-
     @patch('omnipath_utils.server._routes_mapping.translate_ids')
     def test_raw_parameter(self, mock_translate, client):
         """Test that raw=true is accepted and reflected in meta."""
@@ -175,6 +176,7 @@ class TestRESTParams:
     @patch('omnipath_utils.server._routes_mapping.translate_ids')
     def test_raw_skips_fallbacks(self, mock_translate, client):
         """When raw=true, fallbacks should not be applied."""
+
         # Only return result for exact match; lowercase should miss
         def side_effect(session, ids, src, tgt, tax):
             return {i: {'P04637'} for i in ids if i == 'TP53'}

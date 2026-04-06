@@ -16,9 +16,11 @@ def main():
 
     if cmd == 'build':
         from omnipath_utils.cli._build import build_cmd
+
         build_cmd(sys.argv[2:])
     elif cmd == 'serve':
         from omnipath_utils.cli._serve import serve_cmd
+
         serve_cmd(sys.argv[2:])
     else:
         print(f'Unknown command: {cmd}')
