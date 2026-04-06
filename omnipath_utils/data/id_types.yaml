@@ -973,3 +973,111 @@ chembl:
   aliases:
     - chembl_id
     - chembl_compound
+
+# ===================================================================
+# UniChem sources (auto-discovery baseline)
+# ===================================================================
+
+rscb_pdb:
+  label: RSCB PDB
+  entity_type: small_molecule
+  backends:
+    unichem: rscb_pdb
+  aliases:
+    - rscb_pdb_id
+
+guide_to_pharmacology:
+  label: Guide to Pharmacology
+  entity_type: small_molecule
+  curie_prefix: gtopdb
+  backends:
+    unichem: guide_to_pharmacology
+  aliases:
+    - gtopdb
+    - gtop
+
+pdbe:
+  label: PDBe
+  entity_type: small_molecule
+  backends:
+    unichem: pdbe
+  aliases:
+    - pdbe_id
+
+fda_srs:
+  label: FDA SRS
+  entity_type: small_molecule
+  backends:
+    unichem: fda_srs
+  aliases:
+    - fda
+    - srs
+
+surechembl:
+  label: SureChEMBL
+  entity_type: small_molecule
+  backends:
+    unichem: surechembl
+  aliases:
+    - surechembl_id
+
+nmrshiftdb:
+  label: NMRShiftDB
+  entity_type: small_molecule
+  backends:
+    unichem: nmrshiftdb
+  aliases:
+    - nmrshiftdb_id
+
+molport:
+  label: MolPort
+  entity_type: small_molecule
+  backends:
+    unichem: molport
+  aliases:
+    - molport_id
+
+bindingdb:
+  label: BindingDB
+  entity_type: small_molecule
+  backends:
+    unichem: bindingdb
+  aliases:
+    - bindingdb_id
+
+drugcentral:
+  label: DrugCentral
+  entity_type: small_molecule
+  backends:
+    unichem: drugcentral
+  aliases:
+    - drugcentral_id
+
+probes_drugs:
+  label: Probes&Drugs
+  entity_type: small_molecule
+  backends:
+    unichem: probes_drugs
+  aliases:
+    - probes_and_drugs
+    - probes&drugs
+
+csd:
+  label: CSD
+  entity_type: small_molecule
+  backends:
+    unichem: csd
+  aliases:
+    - csd_id
+
+# ===================================================================
+# RaMP-specific types not in UniChem
+# ===================================================================
+
+refmet:
+  label: RefMet
+  entity_type: small_molecule
+  backends:
+    ramp: refmet
+  aliases:
+    - refmet_id

@@ -615,26 +615,365 @@ class DatabaseBuilder:
             _log.info("Exported %s: %d rows", fname, len(rows))
 
     def populate_metabolites(self):
-        """Populate metabolite ID mappings (not organism-specific)."""
-        for src, tgt in [
-            ("chembl", "chebi"),
-            ("drugbank", "chebi"),
-            ("pubchem", "chebi"),
-        ]:
-            try:
-                self.populate_mapping(src, tgt, 0, "unichem")
-            except Exception as e:
-                _log.error("UniChem %s -> %s failed: %s", src, tgt, e)
+        """Populate metabolite ID mappings from UniChem and RaMP.
 
-        for src, tgt in [
-            ("hmdb", "chebi"),
-            ("kegg", "chebi"),
-            ("pubchem", "chebi"),
-        ]:
-            try:
-                self.populate_mapping(src, tgt, 0, "ramp")
-            except Exception as e:
-                _log.error("RaMP %s -> %s failed: %s", src, tgt, e)
+        Auto-discovers all available ID types from both sources and builds
+        all available pairwise mappings.
+        """
+        self._populate_unichem()
+        self._populate_ramp()
+
+    # ------------------------------------------------------------------
+    # UniChem auto-discovery
+    # ------------------------------------------------------------------
+
+    # Mapping from UniChem normalised labels to our canonical id_type
+    # names where they differ.
+    _UNICHEM_NAME_MAP: dict[str, str] = {
+        'lipid_maps': 'lipidmaps',
+        'probes&drugs': 'probes_drugs',
+    }
+
+    def _unichem_canonical(self, label: str) -> str | None:
+        """Normalise a UniChem source label to a canonical id_type name."""
+        import re
+
+        raw = label.lower().replace(' ', '_')
+        raw = re.sub(r'[^a-z0-9_&]', '', raw).strip('_')
+
+        if not raw:
+            return None
+
+        return self._UNICHEM_NAME_MAP.get(raw, raw)
+
+    def _populate_unichem(self):
+        """Auto-discover and build all UniChem pairwise mappings."""
+        try:
+            from pypath.inputs.unichem import (
+                unichem_mapping,
+                unichem_sources,
+            )
+        except ImportError:
+            _log.warning('pypath not available for UniChem')
+            return
+
+        sources = unichem_sources()
+        _log.info('UniChem: %d sources available', len(sources))
+
+        # Register any newly discovered sources as ID types
+        self._register_unichem_types(sources)
+
+        # Map UniChem source numbers to our canonical id_type names
+        num_to_name: dict[int, str] = {}
+
+        for num, label in sources.items():
+            canonical = self._unichem_canonical(label)
+
+            if canonical:
+                num_to_name[num] = canonical
+
+        # Get backend ID
+        with Session(self.engine) as session:
+            backend = (
+                session.query(Backend).filter_by(name='unichem').first()
+            )
+
+            if not backend:
+                _log.error('Backend unichem not found')
+                return
+
+            backend_id = backend.id
+
+        from omnipath_utils.db._connection import get_connection
+
+        built = 0
+        failed = 0
+        source_nums = sorted(num_to_name.keys())
+
+        for i, src_num in enumerate(source_nums):
+            for tgt_num in source_nums[i + 1:]:
+                src_name = num_to_name[src_num]
+                tgt_name = num_to_name[tgt_num]
+
+                try:
+                    data = unichem_mapping(src_num, tgt_num)
+
+                    if not data:
+                        continue
+
+                    with Session(self.engine) as session:
+                        src_type = (
+                            session.query(IdType)
+                            .filter_by(name=src_name)
+                            .first()
+                        )
+                        tgt_type = (
+                            session.query(IdType)
+                            .filter_by(name=tgt_name)
+                            .first()
+                        )
+
+                        if not src_type or not tgt_type:
+                            _log.debug(
+                                'UniChem: id_type not found'
+                                ' for %s or %s',
+                                src_name,
+                                tgt_name,
+                            )
+                            continue
+
+                        src_type_id = src_type.id
+                        tgt_type_id = tgt_type.id
+
+                    conn = get_connection(self._db_url)
+                    row_count = 0
+
+                    with conn.cursor() as cur:
+                        with cur.copy(
+                            f'COPY {SCHEMA}.id_mapping'
+                            ' (source_type_id, target_type_id,'
+                            ' ncbi_tax_id, source_id, target_id,'
+                            ' backend_id) FROM STDIN'
+                        ) as copy:
+                            for src_id, tgt_ids in data.items():
+                                for tgt_id in tgt_ids:
+                                    copy.write_row((
+                                        src_type_id,
+                                        tgt_type_id,
+                                        0,
+                                        str(src_id)[:64],
+                                        str(tgt_id)[:64],
+                                        backend_id,
+                                    ))
+                                    row_count += 1
+
+                    conn.commit()
+                    conn.close()
+
+                    if row_count:
+                        built += 1
+                        _log.info(
+                            'UniChem %s -> %s: %d rows',
+                            src_name,
+                            tgt_name,
+                            row_count,
+                        )
+
+                except Exception as e:
+                    failed += 1
+                    _log.debug(
+                        'UniChem %s -> %s: %s',
+                        src_name,
+                        tgt_name,
+                        e,
+                    )
+
+        _log.info(
+            'UniChem: built %d tables, %d failed/empty',
+            built,
+            failed,
+        )
+
+    def _register_unichem_types(self, sources: dict[int, str]):
+        """Register UniChem source IDs as id_types if not present."""
+        with Session(self.engine) as session:
+            for _num, label in sources.items():
+                canonical = self._unichem_canonical(label)
+
+                if not canonical:
+                    continue
+
+                existing = (
+                    session.query(IdType)
+                    .filter_by(name=canonical)
+                    .first()
+                )
+
+                if not existing:
+                    session.add(
+                        IdType(
+                            name=canonical,
+                            label=label,
+                            entity_type='small_molecule',
+                        )
+                    )
+                    _log.info(
+                        'Registered new ID type from UniChem:'
+                        ' %s (%s)',
+                        canonical,
+                        label,
+                    )
+
+            session.commit()
+
+    # ------------------------------------------------------------------
+    # RaMP auto-discovery
+    # ------------------------------------------------------------------
+
+    # Mapping from RaMP IDtype strings to our canonical id_type names
+    # where they differ.
+    _RAMP_NAME_MAP: dict[str, str] = {
+        'CAS': 'cas',
+        'LIPIDMAPS': 'lipidmaps',
+        'rhea-comp': 'rhea',
+    }
+
+    def _ramp_canonical(self, ramp_type: str) -> str:
+        """Normalise a RaMP IDtype string to a canonical id_type name."""
+        return self._RAMP_NAME_MAP.get(ramp_type, ramp_type.lower())
+
+    def _populate_ramp(self):
+        """Auto-discover and build RaMP pairwise mappings."""
+        try:
+            from pypath.inputs.ramp import ramp_mapping
+            from pypath.inputs.ramp._sqlite import (
+                id_types as ramp_id_types_fn,
+            )
+        except ImportError:
+            _log.warning('pypath not available for RaMP')
+            return
+
+        # Discover available compound ID types
+        try:
+            ramp_types = sorted(
+                ramp_id_types_fn(entity_type='compound')
+            )
+        except Exception as e:
+            _log.error('RaMP discovery failed: %s', e)
+            return
+
+        _log.info(
+            'RaMP: %d compound ID types available', len(ramp_types)
+        )
+
+        # Register any new types
+        self._register_ramp_types(ramp_types)
+
+        # Get backend ID
+        with Session(self.engine) as session:
+            backend = (
+                session.query(Backend).filter_by(name='ramp').first()
+            )
+
+            if not backend:
+                _log.error('Backend ramp not found')
+                return
+
+            backend_id = backend.id
+
+        from omnipath_utils.db._connection import get_connection
+
+        # Build important pairs: each type to chebi and hmdb (hub types)
+        hubs = ['chebi', 'hmdb']
+        built = 0
+
+        for src_ramp_type in ramp_types:
+            src_canonical = self._ramp_canonical(src_ramp_type)
+
+            for hub in hubs:
+                if src_canonical == hub:
+                    continue
+
+                try:
+                    data = ramp_mapping(src_ramp_type, hub)
+
+                    if not data:
+                        continue
+
+                    with Session(self.engine) as session:
+                        src_t = (
+                            session.query(IdType)
+                            .filter_by(name=src_canonical)
+                            .first()
+                        )
+                        tgt_t = (
+                            session.query(IdType)
+                            .filter_by(name=hub)
+                            .first()
+                        )
+
+                        if not src_t or not tgt_t:
+                            _log.debug(
+                                'RaMP: id_type not found'
+                                ' for %s or %s',
+                                src_canonical,
+                                hub,
+                            )
+                            continue
+
+                        src_type_id = src_t.id
+                        tgt_type_id = tgt_t.id
+
+                    conn = get_connection(self._db_url)
+                    row_count = 0
+
+                    with conn.cursor() as cur:
+                        with cur.copy(
+                            f'COPY {SCHEMA}.id_mapping'
+                            ' (source_type_id, target_type_id,'
+                            ' ncbi_tax_id, source_id, target_id,'
+                            ' backend_id) FROM STDIN'
+                        ) as copy:
+                            for src_id, tgt_ids in data.items():
+                                for tgt_id in tgt_ids:
+                                    copy.write_row((
+                                        src_type_id,
+                                        tgt_type_id,
+                                        0,
+                                        str(src_id)[:64],
+                                        str(tgt_id)[:64],
+                                        backend_id,
+                                    ))
+                                    row_count += 1
+
+                    conn.commit()
+                    conn.close()
+
+                    if row_count:
+                        built += 1
+                        _log.info(
+                            'RaMP %s -> %s: %d rows',
+                            src_canonical,
+                            hub,
+                            row_count,
+                        )
+
+                except Exception as e:
+                    _log.debug(
+                        'RaMP %s -> %s: %s',
+                        src_canonical,
+                        hub,
+                        e,
+                    )
+
+        _log.info('RaMP: built %d tables', built)
+
+    def _register_ramp_types(self, ramp_types: list[str]):
+        """Register RaMP ID types if not already present."""
+        with Session(self.engine) as session:
+            for rtype in ramp_types:
+                canonical = self._ramp_canonical(rtype)
+
+                existing = (
+                    session.query(IdType)
+                    .filter_by(name=canonical)
+                    .first()
+                )
+
+                if not existing:
+                    session.add(
+                        IdType(
+                            name=canonical,
+                            label=rtype,
+                            entity_type='small_molecule',
+                        )
+                    )
+                    _log.info(
+                        'Registered new ID type from RaMP: %s',
+                        canonical,
+                    )
+
+            session.commit()
 
     def populate_mirna(self, organisms: list[int]):
         """Populate miRNA ID mappings."""

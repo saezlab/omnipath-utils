@@ -88,3 +88,147 @@ class TestIdTypeRegistry:
         r1 = IdTypeRegistry.get()
         r2 = IdTypeRegistry.get()
         assert r1 is r2
+
+
+class TestAutoDiscoveryTypes:
+    """New UniChem and RaMP types are registered in id_types.yaml."""
+
+    def test_unichem_types_registered(self, registry):
+        """UniChem sources should all be in the registry."""
+        unichem_types = [
+            'chembl',
+            'drugbank',
+            'chebi',
+            'hmdb',
+            'pubchem',
+            'guide_to_pharmacology',
+            'swisslipids',
+            'bindingdb',
+            'drugcentral',
+            'surechembl',
+            'molport',
+            'nmrshiftdb',
+            'fda_srs',
+            'probes_drugs',
+            'csd',
+            'rscb_pdb',
+            'pdbe',
+        ]
+
+        for t in unichem_types:
+            assert t in registry, f'{t} not in registry'
+
+    def test_ramp_types_in_registry(self, registry):
+        """RaMP compound types should be in the registry."""
+        ramp_types = [
+            'wikidata',
+            'refmet',
+            'chemspider',
+            'lipidbank',
+            'plantfa',
+            'kegg_glycan',
+            'polymer',
+        ]
+
+        for t in ramp_types:
+            assert t in registry, f'{t} not in registry'
+
+    def test_unichem_entity_types(self, registry):
+        """All UniChem types should be small_molecule."""
+        for t in [
+            'guide_to_pharmacology',
+            'surechembl',
+            'bindingdb',
+            'drugcentral',
+        ]:
+            assert registry.entity_type(t) == 'small_molecule'
+
+    def test_unichem_aliases(self, registry):
+        """UniChem type aliases should resolve correctly."""
+        assert registry.resolve('gtopdb') == 'guide_to_pharmacology'
+        assert registry.resolve('gtop') == 'guide_to_pharmacology'
+        assert registry.resolve('surechembl_id') == 'surechembl'
+        assert registry.resolve('bindingdb_id') == 'bindingdb'
+        assert registry.resolve('drugcentral_id') == 'drugcentral'
+        assert registry.resolve('probes_and_drugs') == 'probes_drugs'
+
+    def test_refmet_type(self, registry):
+        """RefMet should be registered from RaMP."""
+        assert 'refmet' in registry
+        assert registry.entity_type('refmet') == 'small_molecule'
+        assert registry.resolve('refmet_id') == 'refmet'
+
+
+class TestAutoDiscoveryBuild:
+    """Test the _build.py auto-discovery helper methods."""
+
+    def test_unichem_name_map(self):
+        """Verify the UniChem name mapping table."""
+        from unittest.mock import patch
+
+        with (
+            patch('omnipath_utils.db._build.get_engine'),
+            patch('omnipath_utils.db._build.ensure_schema'),
+        ):
+            from omnipath_utils.db._build import DatabaseBuilder
+
+            builder = DatabaseBuilder(db_url='postgresql://test/db')
+
+        assert builder._UNICHEM_NAME_MAP['lipid_maps'] == 'lipidmaps'
+        assert builder._UNICHEM_NAME_MAP['probes&drugs'] == 'probes_drugs'
+
+    def test_unichem_canonical(self):
+        """Verify canonical name normalisation for UniChem labels."""
+        from unittest.mock import patch
+
+        with (
+            patch('omnipath_utils.db._build.get_engine'),
+            patch('omnipath_utils.db._build.ensure_schema'),
+        ):
+            from omnipath_utils.db._build import DatabaseBuilder
+
+            builder = DatabaseBuilder(db_url='postgresql://test/db')
+
+        assert builder._unichem_canonical('ChEMBL') == 'chembl'
+        assert builder._unichem_canonical('DrugBank') == 'drugbank'
+        assert (
+            builder._unichem_canonical('Guide to Pharmacology')
+            == 'guide_to_pharmacology'
+        )
+        assert builder._unichem_canonical('LIPID MAPS\u00ae') == 'lipidmaps'
+        assert builder._unichem_canonical('Probes&Drugs') == 'probes_drugs'
+        assert builder._unichem_canonical('') is None
+
+    def test_ramp_name_map(self):
+        """Verify the RaMP name mapping table."""
+        from unittest.mock import patch
+
+        with (
+            patch('omnipath_utils.db._build.get_engine'),
+            patch('omnipath_utils.db._build.ensure_schema'),
+        ):
+            from omnipath_utils.db._build import DatabaseBuilder
+
+            builder = DatabaseBuilder(db_url='postgresql://test/db')
+
+        assert builder._RAMP_NAME_MAP['CAS'] == 'cas'
+        assert builder._RAMP_NAME_MAP['LIPIDMAPS'] == 'lipidmaps'
+        assert builder._RAMP_NAME_MAP['rhea-comp'] == 'rhea'
+
+    def test_ramp_canonical(self):
+        """Verify canonical name normalisation for RaMP types."""
+        from unittest.mock import patch
+
+        with (
+            patch('omnipath_utils.db._build.get_engine'),
+            patch('omnipath_utils.db._build.ensure_schema'),
+        ):
+            from omnipath_utils.db._build import DatabaseBuilder
+
+            builder = DatabaseBuilder(db_url='postgresql://test/db')
+
+        assert builder._ramp_canonical('chebi') == 'chebi'
+        assert builder._ramp_canonical('CAS') == 'cas'
+        assert builder._ramp_canonical('LIPIDMAPS') == 'lipidmaps'
+        assert builder._ramp_canonical('rhea-comp') == 'rhea'
+        assert builder._ramp_canonical('hmdb') == 'hmdb'
