@@ -506,3 +506,252 @@ class TestMapper:
         assert "uniprot" in types
         assert "genesymbol" in types
         assert len(types) > 50
+
+
+# ---- UniProt Cleanup Pipeline tests ----
+
+
+class TestUniProtCleanupPipeline:
+    """Test the full cleanup pipeline with mock mapper."""
+
+    def _make_mapper_with_tables(self, tables):
+        """Create a mock mapper with preloaded lookup tables."""
+        mapper = MagicMock()
+
+        def direct_lookup(name, id_type, target_id_type, ncbi_tax_id):
+            key = (id_type, target_id_type, ncbi_tax_id)
+            data = tables.get(key, {})
+            return data.get(name, set())
+
+        mapper._direct_lookup = direct_lookup
+        return mapper
+
+    def test_primary_uniprot_translates_secondary(self):
+        from omnipath_utils.mapping._cleanup import _primary_uniprot
+        mapper = self._make_mapper_with_tables({
+            ("uniprot-sec", "uniprot-pri", 9606): {
+                "Q15086": {"P04637"},  # Q15086 is a secondary AC for TP53
+            },
+        })
+        result = _primary_uniprot({"Q15086", "P00533"}, 9606, mapper)
+        assert "P04637" in result  # secondary translated
+        assert "P00533" in result  # non-secondary kept
+
+    def test_primary_uniprot_keeps_primary(self):
+        from omnipath_utils.mapping._cleanup import _primary_uniprot
+        mapper = self._make_mapper_with_tables({})  # no sec->pri table
+        result = _primary_uniprot({"P04637"}, 9606, mapper)
+        assert result == {"P04637"}
+
+    def test_trembl_to_swissprot(self):
+        from omnipath_utils.mapping._cleanup import _trembl_to_swissprot
+
+        mapper = self._make_mapper_with_tables({
+            ("trembl", "genesymbol", 9606): {
+                "A0A024R1R8": {"TP53"},
+            },
+            ("genesymbol", "swissprot", 9606): {
+                "TP53": {"P04637"},
+            },
+        })
+
+        # Mock the reflist to define SwissProt set
+        with patch("omnipath_utils.reflists.all_swissprots", return_value={"P04637", "P00533"}):
+            result = _trembl_to_swissprot({"A0A024R1R8", "P00533"}, 9606, mapper)
+
+        assert "P04637" in result   # TrEMBL resolved to SwissProt
+        assert "P00533" in result   # already SwissProt, kept
+        assert "A0A024R1R8" not in result  # TrEMBL replaced
+
+    def test_trembl_kept_when_no_swissprot(self):
+        from omnipath_utils.mapping._cleanup import _trembl_to_swissprot
+
+        mapper = self._make_mapper_with_tables({
+            ("trembl", "genesymbol", 9606): {
+                "X12345": {"UNKNOWN_GENE"},
+            },
+            ("genesymbol", "swissprot", 9606): {},  # no SwissProt for this gene
+        })
+
+        with patch("omnipath_utils.reflists.all_swissprots", return_value={"P04637"}):
+            result = _trembl_to_swissprot({"X12345"}, 9606, mapper)
+
+        assert "X12345" in result  # kept because no SwissProt found
+
+    def test_filter_organism(self):
+        from omnipath_utils.mapping._cleanup import _filter_organism
+
+        with patch("omnipath_utils.reflists.all_uniprots", return_value={"P04637", "P00533"}):
+            result = _filter_organism({"P04637", "FAKE123"}, 9606)
+
+        assert result == {"P04637"}  # FAKE123 removed
+
+    def test_filter_organism_keeps_all_when_none_match(self):
+        from omnipath_utils.mapping._cleanup import _filter_organism
+
+        with patch("omnipath_utils.reflists.all_uniprots", return_value={"OTHER"}):
+            result = _filter_organism({"P04637", "P00533"}, 9606)
+
+        # Nothing matched proteome, but we return originals rather than empty
+        assert result == {"P04637", "P00533"}
+
+    def test_full_cleanup_pipeline(self):
+        mapper = self._make_mapper_with_tables({
+            ("uniprot-sec", "uniprot-pri", 9606): {
+                "Q15086": {"P04637"},
+            },
+        })
+
+        with patch("omnipath_utils.reflists.all_swissprots", return_value={"P04637"}), \
+             patch("omnipath_utils.reflists.all_uniprots", return_value={"P04637", "P00533"}):
+            result = uniprot_cleanup({"Q15086", "P00533", "NOT_AC"}, 9606, mapper)
+
+        assert "P04637" in result   # secondary translated
+        assert "P00533" in result   # valid, kept
+        assert "NOT_AC" not in result  # invalid format removed
+
+    def test_cleanup_without_mapper_returns_input(self):
+        result = uniprot_cleanup({"P04637", "FAKE"}, 9606, mapper=None)
+        assert result == {"P04637", "FAKE"}  # returned unchanged
+
+
+# ---- miRNA fallback tests ----
+
+
+class TestMirnaFallback:
+
+    def _make_mapper(self, tables):
+        mapper = MagicMock()
+        def direct_lookup(name, id_type, target_id_type, ncbi_tax_id):
+            return tables.get((id_type, target_id_type, ncbi_tax_id), {}).get(name, set())
+        mapper._direct_lookup = direct_lookup
+        return mapper
+
+    def test_mature_to_precursor_fallback(self):
+        """mir-mat-name not found, try as mir-name."""
+        from omnipath_utils.mapping._special import map_mirna_fallback
+
+        mapper = self._make_mapper({
+            # Direct lookup for mir-mat-name fails (empty)
+            # But treating it as mir-name succeeds:
+            ("mir-name", "mir-pre", 9606): {
+                "hsa-mir-21": {"MI0000077"},
+            },
+        })
+
+        result = map_mirna_fallback("hsa-mir-21", "mir-mat-name", "mir-pre", 9606, mapper)
+        assert "MI0000077" in result
+
+    def test_precursor_to_mature_fallback(self):
+        """mir-name not found, try as mir-mat-name."""
+        from omnipath_utils.mapping._special import map_mirna_fallback
+
+        mapper = self._make_mapper({
+            ("mir-mat-name", "mirbase", 9606): {
+                "hsa-miR-21-5p": {"MIMAT0000076"},
+            },
+        })
+
+        result = map_mirna_fallback("hsa-miR-21-5p", "mir-name", "mirbase", 9606, mapper)
+        assert "MIMAT0000076" in result
+
+    def test_no_mirna_fallback_for_non_mirna(self):
+        from omnipath_utils.mapping._special import map_mirna_fallback
+        mapper = MagicMock()
+
+        result = map_mirna_fallback("TP53", "genesymbol", "uniprot", 9606, mapper)
+        assert result == set()
+
+
+# ---- Prefix stripping tests ----
+
+
+class TestPrefixStripping:
+
+    def test_strip_chebi_prefix(self):
+        from omnipath_utils.mapping._special import strip_prefix
+
+        mapper = MagicMock()
+        mapper._direct_lookup = MagicMock(return_value={"some_id"})
+
+        result = strip_prefix("CHEBI:12345", "chebi", "hmdb", 0, mapper)
+        assert result == {"some_id"}
+        mapper._direct_lookup.assert_called_with("12345", "chebi", "hmdb", 0)
+
+    def test_no_prefix_returns_empty(self):
+        from omnipath_utils.mapping._special import strip_prefix
+        mapper = MagicMock()
+
+        result = strip_prefix("12345", "chebi", "hmdb", 0, mapper)
+        assert result == set()
+
+
+# ---- Backend registration tests ----
+
+
+class TestBackendRegistry:
+
+    def test_all_backends_register(self):
+        from omnipath_utils.mapping.backends import get_backend
+        for name in ("uniprot", "biomart", "uploadlists", "uniprot_ftp",
+                     "mirbase", "unichem", "ramp", "hmdb"):
+            b = get_backend(name)
+            assert b is not None, f"Backend {name} not registered"
+
+    def test_unknown_backend_returns_none(self):
+        from omnipath_utils.mapping.backends import get_backend
+        assert get_backend("nonexistent") is None
+
+    def test_backend_has_name(self):
+        from omnipath_utils.mapping.backends import get_backend
+        b = get_backend("uniprot")
+        assert b.name == "uniprot"
+        b = get_backend("biomart")
+        assert b.name == "biomart"
+
+    def test_backend_has_yaml_key(self):
+        from omnipath_utils.mapping.backends import get_backend
+        b = get_backend("uniprot")
+        assert b.yaml_key == "uniprot"
+        b = get_backend("biomart")
+        assert b.yaml_key == "ensembl"
+
+
+# ---- Mapper integration tests (with full fallback chain) ----
+
+
+class TestMapperIntegration:
+    """Test the full map_name pipeline with preloaded tables."""
+
+    def setup_method(self):
+        Mapper._instance = None
+
+    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    def test_uniprot_target_triggers_cleanup(self, mock_load):
+        mapper = Mapper()
+        mock_load.return_value = None
+
+        # Preload genesymbol -> uniprot table with a TrEMBL and a SwissProt
+        table = MappingTable(
+            data={"TP53": {"P04637", "A0A024R1R8"}},
+            id_type="genesymbol",
+            target_id_type="uniprot",
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[table.key] = table
+
+        # Without cleanup support (no sec/pri tables, no reflist),
+        # cleanup returns the input filtered by format only
+        result = mapper.map_name("TP53", "genesymbol", "uniprot")
+        assert "P04637" in result
+        # Both should be present since there is no reflist to filter TrEMBL
+        assert "A0A024R1R8" in result
+
+    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    def test_case_fallback_not_applied_to_uniprot_source(self, mock_load):
+        mapper = Mapper()
+        mock_load.return_value = None
+
+        # map_name with uniprot source should NOT try uppercase
+        result = mapper.map_name("p04637", "uniprot", "genesymbol")
+        assert result == set()  # no fallback, just empty
