@@ -377,3 +377,40 @@ def translate_columns(
         )
 
     return df
+
+
+def identify(
+    identifiers: list[str],
+    ncbi_tax_id: int = 9606,
+) -> dict[str, list[dict]]:
+    """Identify the type of given identifiers.
+
+    Requires database mode (PostgreSQL).
+    """
+    from sqlalchemy.orm import Session
+
+    from omnipath_utils.db._query import identify_ids
+    from omnipath_utils.db._connection import get_engine
+
+    engine = get_engine()
+    with Session(engine) as session:
+        return identify_ids(session, identifiers, ncbi_tax_id)
+
+
+def all_mappings(
+    identifiers: list[str],
+    id_type: str,
+    ncbi_tax_id: int = 9606,
+) -> dict[str, dict[str, list[str]]]:
+    """Get all known mappings for identifiers across all target types.
+
+    Requires database mode (PostgreSQL).
+    """
+    from sqlalchemy.orm import Session
+
+    from omnipath_utils.db._query import get_all_mappings
+    from omnipath_utils.db._connection import get_engine
+
+    engine = get_engine()
+    with Session(engine) as session:
+        return get_all_mappings(session, identifiers, id_type, ncbi_tax_id)

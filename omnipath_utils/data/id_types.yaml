@@ -963,3 +963,13 @@ mirbase:
   aliases:
     - mirbase_ac
     - mirbase_accession
+
+chembl:
+  label: ChEMBL ID
+  entity_type: small_molecule
+  curie_prefix: chembl.compound
+  backends:
+    unichem: chembl
+  aliases:
+    - chembl_id
+    - chembl_compound

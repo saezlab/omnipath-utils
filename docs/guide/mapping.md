@@ -639,6 +639,69 @@ map_name('CHEMBL25', 'chembl', 'drugbank')
 
 map_name('15903', 'chebi', 'pubchem')
 # {'5793'}
+
+# ChEBI to HMDB
+map_name('15422', 'chebi', 'hmdb')
+
+# PubChem to ChEBI
+map_name('5957', 'pubchem', 'chebi')
+
+# HMDB to KEGG
+map_name('HMDB0000001', 'hmdb', 'kegg')
+```
+
+## Identifying unknown identifiers
+
+When you have identifiers but do not know their type, use the `identify`
+function to search all mapping tables:
+
+```python
+from omnipath_utils.mapping import identify
+
+identify(['P04637', 'HMDB0000001'])
+# {'P04637': [{'id_type': 'uniprot', 'role': 'source', 'mappings_count': 5}, ...],
+#  'HMDB0000001': [{'id_type': 'hmdb', 'role': 'source', 'mappings_count': 3}, ...]}
+```
+
+Each result entry includes:
+
+- **id_type** -- the ID type where the identifier was found.
+- **role** -- whether the identifier appears as a `source` or `target`
+  in mapping tables.
+- **mappings_count** -- how many distinct mappings exist from/to that
+  identifier.
+
+This requires database mode (PostgreSQL).
+
+### REST API
+
+```bash
+curl "https://omnipathdb.org/mapping/identify?\
+identifiers=P04637,HMDB0000001"
+```
+
+## Get all mappings for an identifier
+
+To retrieve all known mappings for an identifier to every other type,
+use `all_mappings`:
+
+```python
+from omnipath_utils.mapping import all_mappings
+
+all_mappings(['P04637'], 'uniprot')
+# {'P04637': {'genesymbol': ['TP53'], 'entrez': ['7157'], ...}}
+```
+
+This returns a nested dict: `{identifier: {target_type: [target_ids]}}`.
+
+This requires database mode (PostgreSQL).
+
+### REST API
+
+```bash
+curl "https://omnipathdb.org/mapping/all?\
+identifiers=P04637&\
+id_type=uniprot"
 ```
 
 ## miRNA identifiers

@@ -8,7 +8,11 @@ from litestar import Controller, get, post
 from sqlalchemy.orm import Session
 from litestar.params import Parameter
 
-from omnipath_utils.db._query import translate_ids
+from omnipath_utils.db._query import (
+    identify_ids,
+    translate_ids,
+    get_all_mappings,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -335,6 +339,68 @@ class MappingController(Controller):
                 'total_mapped': len(mapped),
                 'raw': raw,
                 'backend': sorted(backends_used) if backends_used else backend,
+            },
+        }
+
+
+    @get('/identify')
+    async def identify(
+        self,
+        session: Session,
+        identifiers: str = Parameter(
+            description='Comma-separated identifiers',
+        ),
+        ncbi_tax_id: int = Parameter(
+            default=9606,
+            description='NCBI Taxonomy ID',
+        ),
+    ) -> dict:
+        """Try to identify the type of given identifiers.
+
+        Searches all mapping tables in the database to find which ID types
+        contain the given identifiers.
+        """
+
+        id_list = [i.strip() for i in identifiers.split(',') if i.strip()]
+        result = identify_ids(session, id_list, ncbi_tax_id)
+
+        return {
+            'results': result,
+            'meta': {
+                'ncbi_tax_id': ncbi_tax_id,
+                'total_input': len(id_list),
+            },
+        }
+
+    @get('/all')
+    async def all_mappings(
+        self,
+        session: Session,
+        identifiers: str = Parameter(
+            description='Comma-separated identifiers',
+        ),
+        id_type: str = Parameter(description='Source ID type'),
+        ncbi_tax_id: int = Parameter(
+            default=9606,
+            description='NCBI Taxonomy ID',
+        ),
+    ) -> dict:
+        """Return all known mappings for identifiers across all target types."""
+
+        from omnipath_utils.mapping._id_types import IdTypeRegistry
+
+        reg = IdTypeRegistry.get()
+        id_type_resolved = reg.resolve(id_type) or id_type
+
+        id_list = [i.strip() for i in identifiers.split(',') if i.strip()]
+        result = get_all_mappings(session, id_list, id_type_resolved, ncbi_tax_id)
+
+        return {
+            'results': result,
+            'meta': {
+                'id_type': id_type,
+                'ncbi_tax_id': ncbi_tax_id,
+                'total_input': len(id_list),
             },
         }
 

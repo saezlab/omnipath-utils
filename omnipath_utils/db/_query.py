@@ -85,3 +85,105 @@ def get_full_table(
         result[row[0]].add(row[1])
 
     return dict(result)
+
+
+def identify_ids(
+    session: Session,
+    identifiers: list[str],
+    ncbi_tax_id: int,
+) -> dict[str, list[dict]]:
+    """Identify what type(s) each identifier belongs to.
+
+    Searches the id_mapping table as both source and target to find
+    which ID types contain each identifier.
+
+    Returns:
+        Dict mapping each identifier to a list of dicts with
+        "id_type", "role" ("source" or "target"), and "count".
+    """
+    result = {}
+
+    for identifier in identifiers:
+        matches = []
+
+        # Search as source
+        rows = session.execute(
+            text(f"""
+                SELECT st.name, count(DISTINCT m.target_id)
+                FROM {SCHEMA}.id_mapping m
+                JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
+                WHERE m.source_id = :id
+                AND (m.ncbi_tax_id = :tax OR m.ncbi_tax_id = 0)
+                GROUP BY st.name
+            """),
+            {'id': identifier, 'tax': ncbi_tax_id},
+        ).fetchall()
+
+        for row in rows:
+            matches.append({
+                'id_type': row[0],
+                'role': 'source',
+                'mappings_count': row[1],
+            })
+
+        # Search as target
+        rows = session.execute(
+            text(f"""
+                SELECT tt.name, count(DISTINCT m.source_id)
+                FROM {SCHEMA}.id_mapping m
+                JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
+                WHERE m.target_id = :id
+                AND (m.ncbi_tax_id = :tax OR m.ncbi_tax_id = 0)
+                GROUP BY tt.name
+            """),
+            {'id': identifier, 'tax': ncbi_tax_id},
+        ).fetchall()
+
+        for row in rows:
+            matches.append({
+                'id_type': row[0],
+                'role': 'target',
+                'mappings_count': row[1],
+            })
+
+        result[identifier] = matches
+
+    return result
+
+
+def get_all_mappings(
+    session: Session,
+    identifiers: list[str],
+    source_type: str,
+    ncbi_tax_id: int,
+) -> dict[str, dict[str, list[str]]]:
+    """Get all mappings for identifiers across all target types.
+
+    Returns:
+        Dict mapping each identifier to a dict of {target_type: [target_ids]}.
+    """
+    result = {}
+
+    rows = session.execute(
+        text(f"""
+            SELECT m.source_id, tt.name, m.target_id
+            FROM {SCHEMA}.id_mapping m
+            JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
+            JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
+            WHERE st.name = :src_type
+            AND (m.ncbi_tax_id = :tax OR m.ncbi_tax_id = 0)
+            AND m.source_id = ANY(:ids)
+            ORDER BY m.source_id, tt.name
+        """),
+        {
+            'src_type': source_type,
+            'tax': ncbi_tax_id,
+            'ids': identifiers,
+        },
+    ).fetchall()
+
+    for row in rows:
+        src_id, tgt_type, tgt_id = row
+        result.setdefault(src_id, {}).setdefault(tgt_type, []).append(tgt_id)
+
+    return result

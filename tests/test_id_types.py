@@ -75,6 +75,15 @@ class TestIdTypeRegistry:
         assert 'uniprot' in registry
         assert 'fake_type' not in registry
 
+
+    def test_chembl_type(self, registry):
+        assert registry.resolve('chembl') == 'chembl'
+        assert registry.resolve('chembl_id') == 'chembl'
+        assert registry.resolve('chembl_compound') == 'chembl'
+        assert registry.entity_type('chembl') == 'small_molecule'
+        assert registry.curie_prefix('chembl') == 'chembl.compound'
+        assert registry.backend_column('chembl', 'unichem') == 'chembl'
+
     def test_singleton(self):
         r1 = IdTypeRegistry.get()
         r2 = IdTypeRegistry.get()

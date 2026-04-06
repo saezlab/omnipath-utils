@@ -592,3 +592,113 @@ from omnipath_utils.mapping import translate_column
 
 df = translate_column(df, 'gene', 'genesymbol', 'uniprot')
 ```
+
+## Identify and All-Mappings endpoints
+
+### GET /mapping/identify
+
+Given one or more identifiers, search all mapping tables to find which
+ID types contain them. Useful when the type of an identifier is unknown.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `identifiers` | string | yes | Comma-separated identifiers |
+| `ncbi_tax_id` | int | no | NCBI Taxonomy ID (default: 9606) |
+
+```bash
+curl "https://omnipathdb.org/mapping/identify?\
+identifiers=P04637,HMDB0000001"
+```
+
+**Response:**
+
+```json
+{
+    "results": {
+        "P04637": [
+            {"id_type": "uniprot", "role": "source", "mappings_count": 5},
+            {"id_type": "uniprot", "role": "target", "mappings_count": 1}
+        ],
+        "HMDB0000001": [
+            {"id_type": "hmdb", "role": "source", "mappings_count": 3}
+        ]
+    },
+    "meta": {
+        "ncbi_tax_id": 9606,
+        "total_input": 2
+    }
+}
+```
+
+Each match includes:
+
+- **id_type** -- the canonical ID type name where the identifier was found.
+- **role** -- `"source"` or `"target"`, indicating whether the identifier
+  appears as a source or target in mapping rows.
+- **mappings_count** -- the number of distinct mapped partners.
+
+### GET /mapping/all
+
+Given identifiers and their type, return all known mappings to every
+other target type in a single request.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `identifiers` | string | yes | Comma-separated identifiers |
+| `id_type` | string | yes | Source ID type |
+| `ncbi_tax_id` | int | no | NCBI Taxonomy ID (default: 9606) |
+
+```bash
+curl "https://omnipathdb.org/mapping/all?\
+identifiers=P04637&\
+id_type=uniprot"
+```
+
+**Response:**
+
+```json
+{
+    "results": {
+        "P04637": {
+            "genesymbol": ["TP53"],
+            "entrez": ["7157"],
+            "ensg": ["ENSG00000141510"],
+            "hgnc": ["11998"]
+        }
+    },
+    "meta": {
+        "id_type": "uniprot",
+        "ncbi_tax_id": 9606,
+        "total_input": 1
+    }
+}
+```
+
+### Python API
+
+Both functions are available from `omnipath_utils.mapping`:
+
+```python
+from omnipath_utils.mapping import identify, all_mappings
+
+# Identify unknown identifiers
+identify(["P04637", "HMDB0000001"])
+
+# Get all mappings
+all_mappings(["P04637"], "uniprot")
+```
+
+And from the client:
+
+```python
+from omnipath_client.utils import identify, all_mappings
+
+identify(["P04637", "HMDB0000001"])
+all_mappings(["P04637"], "uniprot")
+```
+
+Both require database mode (PostgreSQL) on the server side.

@@ -138,6 +138,89 @@ class TestReflistEndpoints:
         assert 'swissprot' in resp.json()
 
 
+
+
+class TestIdentifyEndpoint:
+    @patch('omnipath_utils.server._routes_mapping.identify_ids')
+    def test_identify(self, mock_identify, client):
+        mock_identify.return_value = {
+            'P04637': [
+                {'id_type': 'uniprot', 'role': 'source', 'mappings_count': 5},
+            ],
+        }
+        resp = client.get(
+            '/mapping/identify',
+            params={'identifiers': 'P04637'},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert 'results' in data
+        assert 'P04637' in data['results']
+        assert data['meta']['total_input'] == 1
+
+    @patch('omnipath_utils.server._routes_mapping.identify_ids')
+    def test_identify_multiple(self, mock_identify, client):
+        mock_identify.return_value = {
+            'P04637': [
+                {'id_type': 'uniprot', 'role': 'source', 'mappings_count': 5},
+            ],
+            'HMDB0000001': [
+                {'id_type': 'hmdb', 'role': 'source', 'mappings_count': 3},
+            ],
+        }
+        resp = client.get(
+            '/mapping/identify',
+            params={'identifiers': 'P04637,HMDB0000001'},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data['meta']['total_input'] == 2
+
+    @patch('omnipath_utils.server._routes_mapping.identify_ids')
+    def test_identify_custom_taxid(self, mock_identify, client):
+        mock_identify.return_value = {'Trp53': []}
+        resp = client.get(
+            '/mapping/identify',
+            params={'identifiers': 'Trp53', 'ncbi_tax_id': 10090},
+        )
+        assert resp.status_code == 200
+        assert resp.json()['meta']['ncbi_tax_id'] == 10090
+
+
+class TestAllMappingsEndpoint:
+    @patch('omnipath_utils.server._routes_mapping.get_all_mappings')
+    def test_all_mappings(self, mock_all, client):
+        mock_all.return_value = {
+            'P04637': {'genesymbol': ['TP53'], 'entrez': ['7157']},
+        }
+        resp = client.get(
+            '/mapping/all',
+            params={
+                'identifiers': 'P04637',
+                'id_type': 'uniprot',
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert 'results' in data
+        assert 'P04637' in data['results']
+        assert 'genesymbol' in data['results']['P04637']
+        assert data['meta']['id_type'] == 'uniprot'
+        assert data['meta']['total_input'] == 1
+
+    @patch('omnipath_utils.server._routes_mapping.get_all_mappings')
+    def test_all_mappings_alias_resolution(self, mock_all, client):
+        mock_all.return_value = {}
+        resp = client.get(
+            '/mapping/all',
+            params={
+                'identifiers': 'P04637',
+                'id_type': 'gene_symbol',
+            },
+        )
+        assert resp.status_code == 200
+
+
 class TestRESTParams:
     @patch('omnipath_utils.server._routes_mapping.translate_ids')
     def test_raw_parameter(self, mock_translate, client):
