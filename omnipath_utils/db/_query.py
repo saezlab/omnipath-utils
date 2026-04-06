@@ -27,7 +27,7 @@ def translate_ids(
     result = defaultdict(set)
 
     rows = session.execute(
-        text(f'''
+        text(f"""
             SELECT m.source_id, m.target_id
             FROM {SCHEMA}.id_mapping m
             JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
@@ -36,7 +36,7 @@ def translate_ids(
             AND tt.name = :tgt_type
             AND m.ncbi_tax_id = :tax
             AND m.source_id = ANY(:ids)
-        '''),
+        """),
         {
             'src_type': source_type,
             'tgt_type': target_type,
@@ -61,7 +61,7 @@ def get_full_table(
     result = defaultdict(set)
 
     rows = session.execute(
-        text(f'''
+        text(f"""
             SELECT m.source_id, m.target_id
             FROM {SCHEMA}.id_mapping m
             JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
@@ -69,7 +69,7 @@ def get_full_table(
             WHERE st.name = :src_type
             AND tt.name = :tgt_type
             AND m.ncbi_tax_id = :tax
-        '''),
+        """),
         {
             'src_type': source_type,
             'tgt_type': target_type,

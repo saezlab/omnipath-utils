@@ -1,19 +1,17 @@
 """Tests for the mapping module."""
 
 import time
+from unittest.mock import MagicMock, patch
 
-import pytest
-from unittest.mock import patch, MagicMock
 from omnipath_utils.mapping._table import MappingTable, MappingTableKey
 from omnipath_utils.mapping._mapper import Mapper
 from omnipath_utils.mapping._cleanup import is_uniprot_ac, uniprot_cleanup
 from omnipath_utils.mapping._special import (
-    map_genesymbol_fallbacks,
-    map_refseq,
-    map_ensembl_strip_version,
     chain_map,
+    map_refseq,
+    map_genesymbol_fallbacks,
+    map_ensembl_strip_version,
 )
-
 
 # ---- MappingTable tests ----
 
@@ -23,8 +21,8 @@ class TestMappingTable:
     def test_create(self, sample_mapping_data):
         table = MappingTable(
             data=sample_mapping_data,
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
         assert len(table) == 4
@@ -32,37 +30,37 @@ class TestMappingTable:
     def test_lookup(self, sample_mapping_data):
         table = MappingTable(
             data=sample_mapping_data,
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
-        assert table["P04637"] == {"TP53"}
-        assert table["NONEXISTENT"] == set()
+        assert table['P04637'] == {'TP53'}
+        assert table['NONEXISTENT'] == set()
 
     def test_contains(self, sample_mapping_data):
         table = MappingTable(
             data=sample_mapping_data,
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
-        assert "P04637" in table
-        assert "FAKE" not in table
+        assert 'P04637' in table
+        assert 'FAKE' not in table
 
     def test_key(self, sample_mapping_data):
         table = MappingTable(
             data=sample_mapping_data,
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
-        assert table.key == MappingTableKey("uniprot", "genesymbol", 9606)
+        assert table.key == MappingTableKey('uniprot', 'genesymbol', 9606)
 
     def test_expiry(self, sample_mapping_data):
         table = MappingTable(
             data=sample_mapping_data,
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
             lifetime=0,
         )
@@ -72,8 +70,8 @@ class TestMappingTable:
     def test_no_expiry(self, sample_mapping_data):
         table = MappingTable(
             data=sample_mapping_data,
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
             lifetime=3600,
         )
@@ -82,50 +80,50 @@ class TestMappingTable:
     def test_repr(self, sample_mapping_data):
         table = MappingTable(
             data=sample_mapping_data,
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
         r = repr(table)
-        assert "uniprot" in r
-        assert "genesymbol" in r
-        assert "9606" in r
+        assert 'uniprot' in r
+        assert 'genesymbol' in r
+        assert '9606' in r
 
     def test_items_keys_values(self, sample_mapping_data):
         table = MappingTable(
             data=sample_mapping_data,
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
-        assert set(table.keys()) == {"P04637", "P00533", "P38398", "Q13315"}
-        assert {"TP53"} in list(table.values())
+        assert set(table.keys()) == {'P04637', 'P00533', 'P38398', 'Q13315'}
+        assert {'TP53'} in list(table.values())
         assert len(list(table.items())) == 4
 
     def test_last_used_updates_on_access(self, sample_mapping_data):
         table = MappingTable(
             data=sample_mapping_data,
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
             lifetime=3600,
         )
         before = table._last_used
         time.sleep(0.01)
-        _ = table["P04637"]
+        _ = table['P04637']
         assert table._last_used > before
 
     def test_last_used_updates_on_contains(self, sample_mapping_data):
         table = MappingTable(
             data=sample_mapping_data,
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
             lifetime=3600,
         )
         before = table._last_used
         time.sleep(0.01)
-        _ = "P04637" in table
+        _ = 'P04637' in table
         assert table._last_used > before
 
 
@@ -135,25 +133,25 @@ class TestMappingTable:
 class TestMappingTableKey:
 
     def test_named_tuple(self):
-        key = MappingTableKey("uniprot", "genesymbol", 9606)
-        assert key.id_type == "uniprot"
-        assert key.target_id_type == "genesymbol"
+        key = MappingTableKey('uniprot', 'genesymbol', 9606)
+        assert key.id_type == 'uniprot'
+        assert key.target_id_type == 'genesymbol'
         assert key.ncbi_tax_id == 9606
 
     def test_equality(self):
-        k1 = MappingTableKey("uniprot", "genesymbol", 9606)
-        k2 = MappingTableKey("uniprot", "genesymbol", 9606)
+        k1 = MappingTableKey('uniprot', 'genesymbol', 9606)
+        k2 = MappingTableKey('uniprot', 'genesymbol', 9606)
         assert k1 == k2
 
     def test_inequality(self):
-        k1 = MappingTableKey("uniprot", "genesymbol", 9606)
-        k2 = MappingTableKey("uniprot", "genesymbol", 10090)
+        k1 = MappingTableKey('uniprot', 'genesymbol', 9606)
+        k2 = MappingTableKey('uniprot', 'genesymbol', 10090)
         assert k1 != k2
 
     def test_hashable(self):
-        k = MappingTableKey("uniprot", "genesymbol", 9606)
-        d = {k: "value"}
-        assert d[k] == "value"
+        k = MappingTableKey('uniprot', 'genesymbol', 9606)
+        d = {k: 'value'}
+        assert d[k] == 'value'
 
 
 # ---- Cleanup tests ----
@@ -162,23 +160,23 @@ class TestMappingTableKey:
 class TestUniProtCleanup:
 
     def test_valid_ac(self):
-        assert is_uniprot_ac("P04637")
-        assert is_uniprot_ac("Q9Y6K9")
-        assert is_uniprot_ac("A0A024R1R8")
+        assert is_uniprot_ac('P04637')
+        assert is_uniprot_ac('Q9Y6K9')
+        assert is_uniprot_ac('A0A024R1R8')
 
     def test_invalid_ac(self):
-        assert not is_uniprot_ac("TP53")
-        assert not is_uniprot_ac("ENSG00000141510")
-        assert not is_uniprot_ac("")
-        assert not is_uniprot_ac("12345")
+        assert not is_uniprot_ac('TP53')
+        assert not is_uniprot_ac('ENSG00000141510')
+        assert not is_uniprot_ac('')
+        assert not is_uniprot_ac('12345')
 
     def test_cleanup_filters_invalid(self):
         mock_mapper = MagicMock()
         mock_mapper._direct_lookup = MagicMock(return_value=set())
-        result = uniprot_cleanup({"P04637", "TP53", "FAKE"}, 9606, mapper=mock_mapper)
-        assert "P04637" in result
-        assert "TP53" not in result
-        assert "FAKE" not in result
+        result = uniprot_cleanup({'P04637', 'TP53', 'FAKE'}, 9606, mapper=mock_mapper)
+        assert 'P04637' in result
+        assert 'TP53' not in result
+        assert 'FAKE' not in result
 
     def test_cleanup_empty_input(self):
         result = uniprot_cleanup(set(), 9606)
@@ -205,104 +203,104 @@ class TestSpecialCases:
 
     def test_genesymbol_case_fallback_upper(self):
         tables = {
-            ("genesymbol", "uniprot", 9606): {
-                "TP53": {"P04637"},
-                "EGFR": {"P00533"},
+            ('genesymbol', 'uniprot', 9606): {
+                'TP53': {'P04637'},
+                'EGFR': {'P00533'},
             },
-            ("genesymbol-syn", "uniprot", 9606): {},
+            ('genesymbol-syn', 'uniprot', 9606): {},
         }
         mapper = self._make_mock_mapper(tables)
 
         # lowercase should find uppercase via .upper()
-        result = map_genesymbol_fallbacks("tp53", "uniprot", 9606, mapper)
-        assert "P04637" in result
+        result = map_genesymbol_fallbacks('tp53', 'uniprot', 9606, mapper)
+        assert 'P04637' in result
 
     def test_genesymbol_case_fallback_capitalize(self):
         tables = {
-            ("genesymbol", "uniprot", 10090): {
-                "Trp53": {"Q01279"},
+            ('genesymbol', 'uniprot', 10090): {
+                'Trp53': {'Q01279'},
             },
-            ("genesymbol-syn", "uniprot", 10090): {},
+            ('genesymbol-syn', 'uniprot', 10090): {},
         }
         mapper = self._make_mock_mapper(tables)
 
         # all-lower should capitalize and match rodent-style Trp53
-        result = map_genesymbol_fallbacks("trp53", "uniprot", 10090, mapper)
-        assert "Q01279" in result
+        result = map_genesymbol_fallbacks('trp53', 'uniprot', 10090, mapper)
+        assert 'Q01279' in result
 
     def test_genesymbol_synonym_fallback(self):
         tables = {
-            ("genesymbol", "uniprot", 9606): {},
-            ("genesymbol-syn", "uniprot", 9606): {
-                "P53": {"P04637"},
+            ('genesymbol', 'uniprot', 9606): {},
+            ('genesymbol-syn', 'uniprot', 9606): {
+                'P53': {'P04637'},
             },
         }
         mapper = self._make_mock_mapper(tables)
 
-        result = map_genesymbol_fallbacks("P53", "uniprot", 9606, mapper)
-        assert "P04637" in result
+        result = map_genesymbol_fallbacks('P53', 'uniprot', 9606, mapper)
+        assert 'P04637' in result
 
     def test_genesymbol_strict_mode(self):
         tables = {
-            ("genesymbol", "uniprot", 9606): {},
-            ("genesymbol-syn", "uniprot", 9606): {},
+            ('genesymbol', 'uniprot', 9606): {},
+            ('genesymbol-syn', 'uniprot', 9606): {},
         }
         mapper = self._make_mock_mapper(tables)
 
         # strict mode should not try appending "1" or truncating
         result = map_genesymbol_fallbacks(
-            "SOMEGENE", "uniprot", 9606, mapper, strict=True,
+            'SOMEGENE', 'uniprot', 9606, mapper, strict=True,
         )
         assert result == set()
 
     def test_refseq_version_strip(self):
         tables = {
-            ("refseqp", "uniprot", 9606): {
-                "NP_000537": {"P04637"},
+            ('refseqp', 'uniprot', 9606): {
+                'NP_000537': {'P04637'},
             },
         }
         mapper = self._make_mock_mapper(tables)
 
         # with version should strip and find
-        result = map_refseq("NP_000537.3", "refseqp", "uniprot", 9606, mapper)
-        assert "P04637" in result
+        result = map_refseq('NP_000537.3', 'refseqp', 'uniprot', 9606, mapper)
+        assert 'P04637' in result
 
     def test_refseq_exact_match(self):
         tables = {
-            ("refseqp", "uniprot", 9606): {
-                "NP_000537.3": {"P04637"},
+            ('refseqp', 'uniprot', 9606): {
+                'NP_000537.3': {'P04637'},
             },
         }
         mapper = self._make_mock_mapper(tables)
 
         # exact match with version present
         result = map_refseq(
-            "NP_000537.3", "refseqp", "uniprot", 9606, mapper,
+            'NP_000537.3', 'refseqp', 'uniprot', 9606, mapper,
         )
-        assert "P04637" in result
+        assert 'P04637' in result
 
     def test_ensembl_version_strip(self):
         tables = {
-            ("ensg", "genesymbol", 9606): {
-                "ENSG00000141510": {"TP53"},
+            ('ensg', 'genesymbol', 9606): {
+                'ENSG00000141510': {'TP53'},
             },
         }
         mapper = self._make_mock_mapper(tables)
 
         result = map_ensembl_strip_version(
-            "ENSG00000141510.12", "ensg", "genesymbol", 9606, mapper,
+            'ENSG00000141510.12', 'ensg', 'genesymbol', 9606, mapper,
         )
-        assert "TP53" in result
+        assert 'TP53' in result
 
     def test_ensembl_no_version_returns_empty(self):
         tables = {
-            ("ensg", "genesymbol", 9606): {},
+            ('ensg', 'genesymbol', 9606): {},
         }
         mapper = self._make_mock_mapper(tables)
 
         # No dot in the name -> no stripping, returns empty
         result = map_ensembl_strip_version(
-            "ENSG00000141510", "ensg", "genesymbol", 9606, mapper,
+            'ENSG00000141510', 'ensg', 'genesymbol', 9606, mapper,
         )
         assert result == set()
 
@@ -312,13 +310,13 @@ class TestSpecialCases:
         # Second call: uniprot -> entrez
         mapper.map_name = MagicMock(
             side_effect=[
-                {"P04637"},  # TP53 -> uniprot
-                {"7157"},  # P04637 -> entrez
+                {'P04637'},  # TP53 -> uniprot
+                {'7157'},  # P04637 -> entrez
             ],
         )
 
-        result = chain_map("TP53", "genesymbol", "entrez", 9606, mapper)
-        assert "7157" in result
+        result = chain_map('TP53', 'genesymbol', 'entrez', 9606, mapper)
+        assert '7157' in result
 
     def test_chain_map_no_intermediate(self):
         mapper = MagicMock()
@@ -326,7 +324,7 @@ class TestSpecialCases:
         mapper.map_name = MagicMock(return_value=set())
 
         result = chain_map(
-            "NONEXIST", "genesymbol", "entrez", 9606, mapper,
+            'NONEXIST', 'genesymbol', 'entrez', 9606, mapper,
         )
         assert result == set()
 
@@ -351,100 +349,100 @@ class TestMapper:
 
     def test_same_type_returns_self(self):
         mapper = Mapper()
-        result = mapper.map_name("P04637", "uniprot", "uniprot")
-        assert result == {"P04637"}
+        result = mapper.map_name('P04637', 'uniprot', 'uniprot')
+        assert result == {'P04637'}
 
     def test_empty_name_returns_empty(self):
         mapper = Mapper()
-        result = mapper.map_name("", "uniprot", "genesymbol")
+        result = mapper.map_name('', 'uniprot', 'genesymbol')
         assert result == set()
 
-    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    @patch('omnipath_utils.mapping._mapper.Mapper._load_table')
     def test_map_name_with_preloaded_table(self, mock_load):
         mapper = Mapper()
 
         # Preload a table
         table = MappingTable(
-            data={"P04637": {"TP53"}, "P00533": {"EGFR"}},
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            data={'P04637': {'TP53'}, 'P00533': {'EGFR'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
         mapper.tables[table.key] = table
 
-        result = mapper.map_name("P04637", "uniprot", "genesymbol")
-        assert result == {"TP53"}
+        result = mapper.map_name('P04637', 'uniprot', 'genesymbol')
+        assert result == {'TP53'}
 
         # Backend should not have been called
         mock_load.assert_not_called()
 
-    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    @patch('omnipath_utils.mapping._mapper.Mapper._load_table')
     def test_map_names(self, mock_load):
         mapper = Mapper()
 
         table = MappingTable(
-            data={"P04637": {"TP53"}, "P00533": {"EGFR"}},
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            data={'P04637': {'TP53'}, 'P00533': {'EGFR'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
         mapper.tables[table.key] = table
 
         result = mapper.map_names(
-            ["P04637", "P00533"], "uniprot", "genesymbol",
+            ['P04637', 'P00533'], 'uniprot', 'genesymbol',
         )
-        assert "TP53" in result
-        assert "EGFR" in result
+        assert 'TP53' in result
+        assert 'EGFR' in result
 
-    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    @patch('omnipath_utils.mapping._mapper.Mapper._load_table')
     def test_translate_batch(self, mock_load):
         mapper = Mapper()
 
         table = MappingTable(
-            data={"P04637": {"TP53"}, "P00533": {"EGFR"}},
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            data={'P04637': {'TP53'}, 'P00533': {'EGFR'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
         mapper.tables[table.key] = table
 
         result = mapper.translate(
-            ["P04637", "P00533", "FAKE"], "uniprot", "genesymbol",
+            ['P04637', 'P00533', 'FAKE'], 'uniprot', 'genesymbol',
         )
-        assert result["P04637"] == {"TP53"}
-        assert result["P00533"] == {"EGFR"}
-        assert result["FAKE"] == set()
+        assert result['P04637'] == {'TP53'}
+        assert result['P00533'] == {'EGFR'}
+        assert result['FAKE'] == set()
 
-    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    @patch('omnipath_utils.mapping._mapper.Mapper._load_table')
     def test_map_name0(self, mock_load):
         mapper = Mapper()
 
         table = MappingTable(
-            data={"P04637": {"TP53"}},
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            data={'P04637': {'TP53'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
         mapper.tables[table.key] = table
 
-        result = mapper.map_name0("P04637", "uniprot", "genesymbol")
-        assert result == "TP53"
+        result = mapper.map_name0('P04637', 'uniprot', 'genesymbol')
+        assert result == 'TP53'
 
-    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    @patch('omnipath_utils.mapping._mapper.Mapper._load_table')
     def test_map_name0_missing(self, mock_load):
         mock_load.return_value = None
         mapper = Mapper()
 
-        result = mapper.map_name0("FAKE", "uniprot", "genesymbol")
+        result = mapper.map_name0('FAKE', 'uniprot', 'genesymbol')
         assert result is None
 
     def test_remove_expired(self):
         mapper = Mapper()
 
         table = MappingTable(
-            data={"P04637": {"TP53"}},
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            data={'P04637': {'TP53'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
             lifetime=0,
         )
@@ -458,9 +456,9 @@ class TestMapper:
         mapper = Mapper()
 
         table = MappingTable(
-            data={"P04637": {"TP53"}},
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            data={'P04637': {'TP53'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
             lifetime=3600,
         )
@@ -469,42 +467,42 @@ class TestMapper:
         mapper.remove_expired()
         assert len(mapper.tables) == 1
 
-    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    @patch('omnipath_utils.mapping._mapper.Mapper._load_table')
     def test_which_table_no_load(self, mock_load):
         mapper = Mapper()
         result = mapper.which_table(
-            "uniprot", "genesymbol", 9606, load=False,
+            'uniprot', 'genesymbol', 9606, load=False,
         )
         assert result is None
         mock_load.assert_not_called()
 
-    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    @patch('omnipath_utils.mapping._mapper.Mapper._load_table')
     def test_translation_table(self, mock_load):
         mapper = Mapper()
 
         table = MappingTable(
-            data={"P04637": {"TP53"}, "P00533": {"EGFR"}},
-            id_type="uniprot",
-            target_id_type="genesymbol",
+            data={'P04637': {'TP53'}, 'P00533': {'EGFR'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
             ncbi_tax_id=9606,
         )
         mapper.tables[table.key] = table
 
-        result = mapper.translation_table("uniprot", "genesymbol")
+        result = mapper.translation_table('uniprot', 'genesymbol')
         assert isinstance(result, dict)
-        assert result["P04637"] == {"TP53"}
+        assert result['P04637'] == {'TP53'}
 
     def test_repr(self):
         mapper = Mapper()
         r = repr(mapper)
-        assert "Mapper" in r
-        assert "9606" in r
+        assert 'Mapper' in r
+        assert '9606' in r
 
     def test_id_types(self):
         mapper = Mapper()
         types = mapper.id_types()
-        assert "uniprot" in types
-        assert "genesymbol" in types
+        assert 'uniprot' in types
+        assert 'genesymbol' in types
         assert len(types) > 50
 
 
@@ -529,90 +527,90 @@ class TestUniProtCleanupPipeline:
     def test_primary_uniprot_translates_secondary(self):
         from omnipath_utils.mapping._cleanup import _primary_uniprot
         mapper = self._make_mapper_with_tables({
-            ("uniprot-sec", "uniprot-pri", 9606): {
-                "Q15086": {"P04637"},  # Q15086 is a secondary AC for TP53
+            ('uniprot-sec', 'uniprot-pri', 9606): {
+                'Q15086': {'P04637'},  # Q15086 is a secondary AC for TP53
             },
         })
-        result = _primary_uniprot({"Q15086", "P00533"}, 9606, mapper)
-        assert "P04637" in result  # secondary translated
-        assert "P00533" in result  # non-secondary kept
+        result = _primary_uniprot({'Q15086', 'P00533'}, 9606, mapper)
+        assert 'P04637' in result  # secondary translated
+        assert 'P00533' in result  # non-secondary kept
 
     def test_primary_uniprot_keeps_primary(self):
         from omnipath_utils.mapping._cleanup import _primary_uniprot
         mapper = self._make_mapper_with_tables({})  # no sec->pri table
-        result = _primary_uniprot({"P04637"}, 9606, mapper)
-        assert result == {"P04637"}
+        result = _primary_uniprot({'P04637'}, 9606, mapper)
+        assert result == {'P04637'}
 
     def test_trembl_to_swissprot(self):
         from omnipath_utils.mapping._cleanup import _trembl_to_swissprot
 
         mapper = self._make_mapper_with_tables({
-            ("trembl", "genesymbol", 9606): {
-                "A0A024R1R8": {"TP53"},
+            ('trembl', 'genesymbol', 9606): {
+                'A0A024R1R8': {'TP53'},
             },
-            ("genesymbol", "swissprot", 9606): {
-                "TP53": {"P04637"},
+            ('genesymbol', 'swissprot', 9606): {
+                'TP53': {'P04637'},
             },
         })
 
         # Mock the reflist to define SwissProt set
-        with patch("omnipath_utils.reflists.all_swissprots", return_value={"P04637", "P00533"}):
-            result = _trembl_to_swissprot({"A0A024R1R8", "P00533"}, 9606, mapper)
+        with patch('omnipath_utils.reflists.all_swissprots', return_value={'P04637', 'P00533'}):
+            result = _trembl_to_swissprot({'A0A024R1R8', 'P00533'}, 9606, mapper)
 
-        assert "P04637" in result   # TrEMBL resolved to SwissProt
-        assert "P00533" in result   # already SwissProt, kept
-        assert "A0A024R1R8" not in result  # TrEMBL replaced
+        assert 'P04637' in result   # TrEMBL resolved to SwissProt
+        assert 'P00533' in result   # already SwissProt, kept
+        assert 'A0A024R1R8' not in result  # TrEMBL replaced
 
     def test_trembl_kept_when_no_swissprot(self):
         from omnipath_utils.mapping._cleanup import _trembl_to_swissprot
 
         mapper = self._make_mapper_with_tables({
-            ("trembl", "genesymbol", 9606): {
-                "X12345": {"UNKNOWN_GENE"},
+            ('trembl', 'genesymbol', 9606): {
+                'X12345': {'UNKNOWN_GENE'},
             },
-            ("genesymbol", "swissprot", 9606): {},  # no SwissProt for this gene
+            ('genesymbol', 'swissprot', 9606): {},  # no SwissProt for this gene
         })
 
-        with patch("omnipath_utils.reflists.all_swissprots", return_value={"P04637"}):
-            result = _trembl_to_swissprot({"X12345"}, 9606, mapper)
+        with patch('omnipath_utils.reflists.all_swissprots', return_value={'P04637'}):
+            result = _trembl_to_swissprot({'X12345'}, 9606, mapper)
 
-        assert "X12345" in result  # kept because no SwissProt found
+        assert 'X12345' in result  # kept because no SwissProt found
 
     def test_filter_organism(self):
         from omnipath_utils.mapping._cleanup import _filter_organism
 
-        with patch("omnipath_utils.reflists.all_uniprots", return_value={"P04637", "P00533"}):
-            result = _filter_organism({"P04637", "FAKE123"}, 9606)
+        with patch('omnipath_utils.reflists.all_uniprots', return_value={'P04637', 'P00533'}):
+            result = _filter_organism({'P04637', 'FAKE123'}, 9606)
 
-        assert result == {"P04637"}  # FAKE123 removed
+        assert result == {'P04637'}  # FAKE123 removed
 
     def test_filter_organism_keeps_all_when_none_match(self):
         from omnipath_utils.mapping._cleanup import _filter_organism
 
-        with patch("omnipath_utils.reflists.all_uniprots", return_value={"OTHER"}):
-            result = _filter_organism({"P04637", "P00533"}, 9606)
+        with patch('omnipath_utils.reflists.all_uniprots', return_value={'OTHER'}):
+            result = _filter_organism({'P04637', 'P00533'}, 9606)
 
         # Nothing matched proteome, but we return originals rather than empty
-        assert result == {"P04637", "P00533"}
+        assert result == {'P04637', 'P00533'}
 
     def test_full_cleanup_pipeline(self):
         mapper = self._make_mapper_with_tables({
-            ("uniprot-sec", "uniprot-pri", 9606): {
-                "Q15086": {"P04637"},
+            ('uniprot-sec', 'uniprot-pri', 9606): {
+                'Q15086': {'P04637'},
             },
         })
 
-        with patch("omnipath_utils.reflists.all_swissprots", return_value={"P04637"}), \
-             patch("omnipath_utils.reflists.all_uniprots", return_value={"P04637", "P00533"}):
-            result = uniprot_cleanup({"Q15086", "P00533", "NOT_AC"}, 9606, mapper)
+        with patch('omnipath_utils.reflists.all_swissprots', return_value={'P04637'}), \
+             patch('omnipath_utils.reflists.all_uniprots', return_value={'P04637', 'P00533'}):
+            result = uniprot_cleanup({'Q15086', 'P00533', 'NOT_AC'}, 9606, mapper)
 
-        assert "P04637" in result   # secondary translated
-        assert "P00533" in result   # valid, kept
-        assert "NOT_AC" not in result  # invalid format removed
+        assert 'P04637' in result   # secondary translated
+        assert 'P00533' in result   # valid, kept
+        assert 'NOT_AC' not in result  # invalid format removed
 
     def test_cleanup_without_mapper_returns_input(self):
-        result = uniprot_cleanup({"P04637", "FAKE"}, 9606, mapper=None)
-        assert result == {"P04637", "FAKE"}  # returned unchanged
+        result = uniprot_cleanup({'P04637', 'FAKE'}, 9606, mapper=None)
+        assert result == {'P04637', 'FAKE'}  # returned unchanged
 
 
 # ---- miRNA fallback tests ----
@@ -634,32 +632,32 @@ class TestMirnaFallback:
         mapper = self._make_mapper({
             # Direct lookup for mir-mat-name fails (empty)
             # But treating it as mir-name succeeds:
-            ("mir-name", "mir-pre", 9606): {
-                "hsa-mir-21": {"MI0000077"},
+            ('mir-name', 'mir-pre', 9606): {
+                'hsa-mir-21': {'MI0000077'},
             },
         })
 
-        result = map_mirna_fallback("hsa-mir-21", "mir-mat-name", "mir-pre", 9606, mapper)
-        assert "MI0000077" in result
+        result = map_mirna_fallback('hsa-mir-21', 'mir-mat-name', 'mir-pre', 9606, mapper)
+        assert 'MI0000077' in result
 
     def test_precursor_to_mature_fallback(self):
         """mir-name not found, try as mir-mat-name."""
         from omnipath_utils.mapping._special import map_mirna_fallback
 
         mapper = self._make_mapper({
-            ("mir-mat-name", "mirbase", 9606): {
-                "hsa-miR-21-5p": {"MIMAT0000076"},
+            ('mir-mat-name', 'mirbase', 9606): {
+                'hsa-miR-21-5p': {'MIMAT0000076'},
             },
         })
 
-        result = map_mirna_fallback("hsa-miR-21-5p", "mir-name", "mirbase", 9606, mapper)
-        assert "MIMAT0000076" in result
+        result = map_mirna_fallback('hsa-miR-21-5p', 'mir-name', 'mirbase', 9606, mapper)
+        assert 'MIMAT0000076' in result
 
     def test_no_mirna_fallback_for_non_mirna(self):
         from omnipath_utils.mapping._special import map_mirna_fallback
         mapper = MagicMock()
 
-        result = map_mirna_fallback("TP53", "genesymbol", "uniprot", 9606, mapper)
+        result = map_mirna_fallback('TP53', 'genesymbol', 'uniprot', 9606, mapper)
         assert result == set()
 
 
@@ -672,17 +670,17 @@ class TestPrefixStripping:
         from omnipath_utils.mapping._special import strip_prefix
 
         mapper = MagicMock()
-        mapper._direct_lookup = MagicMock(return_value={"some_id"})
+        mapper._direct_lookup = MagicMock(return_value={'some_id'})
 
-        result = strip_prefix("CHEBI:12345", "chebi", "hmdb", 0, mapper)
-        assert result == {"some_id"}
-        mapper._direct_lookup.assert_called_with("12345", "chebi", "hmdb", 0)
+        result = strip_prefix('CHEBI:12345', 'chebi', 'hmdb', 0, mapper)
+        assert result == {'some_id'}
+        mapper._direct_lookup.assert_called_with('12345', 'chebi', 'hmdb', 0)
 
     def test_no_prefix_returns_empty(self):
         from omnipath_utils.mapping._special import strip_prefix
         mapper = MagicMock()
 
-        result = strip_prefix("12345", "chebi", "hmdb", 0, mapper)
+        result = strip_prefix('12345', 'chebi', 'hmdb', 0, mapper)
         assert result == set()
 
 
@@ -693,28 +691,28 @@ class TestBackendRegistry:
 
     def test_all_backends_register(self):
         from omnipath_utils.mapping.backends import get_backend
-        for name in ("uniprot", "biomart", "uploadlists", "uniprot_ftp",
-                     "mirbase", "unichem", "ramp", "hmdb"):
+        for name in ('uniprot', 'biomart', 'uploadlists', 'uniprot_ftp',
+                     'mirbase', 'unichem', 'ramp', 'hmdb'):
             b = get_backend(name)
-            assert b is not None, f"Backend {name} not registered"
+            assert b is not None, f'Backend {name} not registered'
 
     def test_unknown_backend_returns_none(self):
         from omnipath_utils.mapping.backends import get_backend
-        assert get_backend("nonexistent") is None
+        assert get_backend('nonexistent') is None
 
     def test_backend_has_name(self):
         from omnipath_utils.mapping.backends import get_backend
-        b = get_backend("uniprot")
-        assert b.name == "uniprot"
-        b = get_backend("biomart")
-        assert b.name == "biomart"
+        b = get_backend('uniprot')
+        assert b.name == 'uniprot'
+        b = get_backend('biomart')
+        assert b.name == 'biomart'
 
     def test_backend_has_yaml_key(self):
         from omnipath_utils.mapping.backends import get_backend
-        b = get_backend("uniprot")
-        assert b.yaml_key == "uniprot"
-        b = get_backend("biomart")
-        assert b.yaml_key == "ensembl"
+        b = get_backend('uniprot')
+        assert b.yaml_key == 'uniprot'
+        b = get_backend('biomart')
+        assert b.yaml_key == 'ensembl'
 
 
 # ---- Mapper integration tests (with full fallback chain) ----
@@ -726,34 +724,34 @@ class TestMapperIntegration:
     def setup_method(self):
         Mapper._instance = None
 
-    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    @patch('omnipath_utils.mapping._mapper.Mapper._load_table')
     def test_uniprot_target_triggers_cleanup(self, mock_load):
         mapper = Mapper()
         mock_load.return_value = None
 
         # Preload genesymbol -> uniprot table with a TrEMBL and a SwissProt
         table = MappingTable(
-            data={"TP53": {"P04637", "A0A024R1R8"}},
-            id_type="genesymbol",
-            target_id_type="uniprot",
+            data={'TP53': {'P04637', 'A0A024R1R8'}},
+            id_type='genesymbol',
+            target_id_type='uniprot',
             ncbi_tax_id=9606,
         )
         mapper.tables[table.key] = table
 
         # Without cleanup support (no sec/pri tables, no reflist),
         # cleanup returns the input filtered by format only
-        result = mapper.map_name("TP53", "genesymbol", "uniprot")
-        assert "P04637" in result
+        result = mapper.map_name('TP53', 'genesymbol', 'uniprot')
+        assert 'P04637' in result
         # Both should be present since there is no reflist to filter TrEMBL
-        assert "A0A024R1R8" in result
+        assert 'A0A024R1R8' in result
 
-    @patch("omnipath_utils.mapping._mapper.Mapper._load_table")
+    @patch('omnipath_utils.mapping._mapper.Mapper._load_table')
     def test_case_fallback_not_applied_to_uniprot_source(self, mock_load):
         mapper = Mapper()
         mock_load.return_value = None
 
         # map_name with uniprot source should NOT try uppercase
-        result = mapper.map_name("p04637", "uniprot", "genesymbol")
+        result = mapper.map_name('p04637', 'uniprot', 'genesymbol')
         assert result == set()  # no fallback, just empty
 
 
@@ -769,6 +767,7 @@ class TestTranslateColumn:
 
     def test_basic_translation(self):
         import pandas as pd
+
         from omnipath_utils.mapping import translate_column
 
         mapper = Mapper()
@@ -794,6 +793,7 @@ class TestTranslateColumn:
 
     def test_expand_one_to_many(self):
         import pandas as pd
+
         from omnipath_utils.mapping import translate_column
 
         mapper = Mapper()
@@ -817,6 +817,7 @@ class TestTranslateColumn:
 
     def test_no_expand(self):
         import pandas as pd
+
         from omnipath_utils.mapping import translate_column
 
         mapper = Mapper()
@@ -840,6 +841,7 @@ class TestTranslateColumn:
 
     def test_drop_untranslated(self):
         import pandas as pd
+
         from omnipath_utils.mapping import translate_column
 
         mapper = Mapper()
@@ -863,6 +865,7 @@ class TestTranslateColumn:
 
     def test_keep_untranslated(self):
         import pandas as pd
+
         from omnipath_utils.mapping import translate_column
 
         mapper = Mapper()
@@ -890,6 +893,7 @@ class TestTranslateColumn:
 
     def test_custom_new_column(self):
         import pandas as pd
+
         from omnipath_utils.mapping import translate_column
 
         mapper = Mapper()
@@ -913,6 +917,7 @@ class TestTranslateColumn:
 
     def test_does_not_modify_input(self):
         import pandas as pd
+
         from omnipath_utils.mapping import translate_column
 
         mapper = Mapper()
@@ -941,6 +946,7 @@ class TestTranslateColumns:
 
     def test_multi_translation(self):
         import pandas as pd
+
         from omnipath_utils.mapping import translate_columns
 
         mapper = Mapper()
@@ -976,6 +982,7 @@ class TestTranslateColumns:
 
     def test_chained_expand(self):
         import pandas as pd
+
         from omnipath_utils.mapping import translate_columns
 
         mapper = Mapper()

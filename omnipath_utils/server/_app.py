@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Generator
+from collections.abc import Generator
 
 from litestar import Litestar, get
-from litestar.config.cors import CORSConfig
-from litestar.openapi import OpenAPIConfig
-from litestar.openapi.plugins import SwaggerRenderPlugin
+from sqlalchemy import text, create_engine
 from litestar.di import Provide
-from litestar.response import Response
-
-from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
+from litestar.openapi import OpenAPIConfig
+from litestar.response import Response
+from litestar.config.cors import CORSConfig
+from litestar.openapi.plugins import SwaggerRenderPlugin
 
-from omnipath_utils.db._connection import get_db_url, SCHEMA
+from omnipath_utils.db._connection import SCHEMA, get_db_url
 
 _log = logging.getLogger(__name__)
 
@@ -46,8 +45,8 @@ def create_app(db_url: str | None = None) -> Litestar:
     _session_factory = create_session_factory(db_url)
 
     from omnipath_utils.server._routes_mapping import MappingController
-    from omnipath_utils.server._routes_taxonomy import TaxonomyController
     from omnipath_utils.server._routes_reflists import ReflistController
+    from omnipath_utils.server._routes_taxonomy import TaxonomyController
     from omnipath_utils.server._routes_orthology import OrthologyController
 
     app = Litestar(

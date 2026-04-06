@@ -68,7 +68,7 @@ class MapReader:
 
             try:
                 with open(cache, 'rb') as f:
-                    return pickle.load(f)  # noqa: S307
+                    return pickle.load(f)
             except Exception:
                 _log.warning('Failed to load cache %s, reloading', cache)
 

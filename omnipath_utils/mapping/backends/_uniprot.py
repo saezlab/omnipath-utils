@@ -48,9 +48,8 @@ class UniProtBackend(MappingBackend):
     ) -> dict[str, set[str]]:
         """Read mapping data via pypath.inputs.uniprot.UniprotQuery."""
 
-        from pypath.inputs.uniprot import UniprotQuery
-
         from pkg_infra.utils import to_set, swap_dict
+        from pypath.inputs.uniprot import UniprotQuery
 
         # UniprotQuery.perform() returns {accession: value} when exactly
         # one field is requested.  We need to figure out which side is

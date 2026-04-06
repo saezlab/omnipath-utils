@@ -13,7 +13,7 @@
 # https://www.gnu.org/licenses/gpl-3.0.txt
 #
 
-"""ID translation, taxonomy, orthology and reference lists for molecular biology"""
+"""ID translation, taxonomy, orthology and reference lists for molecular biology."""
 
 __all__ = [
     '__version__',

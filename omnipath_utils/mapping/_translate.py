@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable
 
 from omnipath_utils._constants import DEFAULT_ORGANISM
 from omnipath_utils.mapping._id_types import IdTypeRegistry
@@ -87,7 +86,7 @@ def translate_core(
 
     # Apply cleanup to ALL results if target is uniprot
     # (the direct table hits did not go through map_name cleanup)
-    if uniprot_cleanup and target_id_type == "uniprot" and table:
+    if uniprot_cleanup and target_id_type == 'uniprot' and table:
         from omnipath_utils.mapping._cleanup import (
             uniprot_cleanup as _cleanup,
         )

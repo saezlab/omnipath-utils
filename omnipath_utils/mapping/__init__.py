@@ -22,7 +22,8 @@ Example::
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 from omnipath_utils.mapping._mapper import Mapper
 
@@ -217,7 +218,7 @@ def translate_column(
         raise ImportError(
             'pandas is required for translate_column. '
             'Install: pip install pandas'
-        )
+        ) from None
 
     from omnipath_utils.mapping._translate import translate_core
 

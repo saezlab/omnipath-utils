@@ -137,6 +137,9 @@ ignore = [
     "D100", "D104", "D105", "D107", "D200", "D202", "D203", "D213",
     "D400", "D401",
     "E251", "E303", "E501", "E731", "E741",
+    # Type annotations — too strict for now, add incrementally
+    "ANN001", "ANN002", "ANN003", "ANN201", "ANN202", "ANN204", "ANN401",
+    "BLE001",  # Blind Exception catches are intentional in build/backend code
 ]
 select = [
     "B", "BLE", "C4", "D", "E", "F", "I", "RUF100",

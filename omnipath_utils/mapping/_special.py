@@ -35,20 +35,20 @@ def map_genesymbol_fallbacks(
     # 1. Direct lookup (already tried by caller)
 
     # 2. Try uppercase
-    result = mapper._direct_lookup(name.upper(), "genesymbol", target_id_type, ncbi_tax_id)
+    result = mapper._direct_lookup(name.upper(), 'genesymbol', target_id_type, ncbi_tax_id)
     if result:
         return result
 
     # 3. Try capitalized (first letter upper, rest lower)
-    result = mapper._direct_lookup(name.capitalize(), "genesymbol", target_id_type, ncbi_tax_id)
+    result = mapper._direct_lookup(name.capitalize(), 'genesymbol', target_id_type, ncbi_tax_id)
     if result:
         return result
 
     # 4. Try gene symbol synonyms
-    result = mapper._direct_lookup(name, "genesymbol-syn", target_id_type, ncbi_tax_id)
+    result = mapper._direct_lookup(name, 'genesymbol-syn', target_id_type, ncbi_tax_id)
     if result:
         return result
-    result = mapper._direct_lookup(name.upper(), "genesymbol-syn", target_id_type, ncbi_tax_id)
+    result = mapper._direct_lookup(name.upper(), 'genesymbol-syn', target_id_type, ncbi_tax_id)
     if result:
         return result
 
@@ -56,7 +56,7 @@ def map_genesymbol_fallbacks(
         return set()
 
     # 5. Try with "1" appended (for isoform suffixes)
-    result = mapper._direct_lookup(f"{name}1", "genesymbol", target_id_type, ncbi_tax_id)
+    result = mapper._direct_lookup(f'{name}1', 'genesymbol', target_id_type, ncbi_tax_id)
     if result:
         return result
 
@@ -79,8 +79,8 @@ def map_refseq(
         return result
 
     # Try without version number
-    if "." in name:
-        base = name.rsplit(".", 1)[0]
+    if '.' in name:
+        base = name.rsplit('.', 1)[0]
         result = mapper._direct_lookup(base, id_type, target_id_type, ncbi_tax_id)
         if result:
             return result
@@ -89,9 +89,9 @@ def map_refseq(
         return set()
 
     # Try common version numbers
-    base = name.split(".")[0] if "." in name else name
+    base = name.split('.')[0] if '.' in name else name
     for ver in range(1, 20):
-        result = mapper._direct_lookup(f"{base}.{ver}", id_type, target_id_type, ncbi_tax_id)
+        result = mapper._direct_lookup(f'{base}.{ver}', id_type, target_id_type, ncbi_tax_id)
         if result:
             return result
 
@@ -107,8 +107,8 @@ def map_ensembl_strip_version(
 ) -> set[str]:
     """Ensembl IDs sometimes have version suffixes (.1, .2, etc.)."""
 
-    if "." in name:
-        base = name.rsplit(".", 1)[0]
+    if '.' in name:
+        base = name.rsplit('.', 1)[0]
         return mapper._direct_lookup(base, id_type, target_id_type, ncbi_tax_id)
 
     return set()
@@ -120,7 +120,7 @@ def chain_map(
     target_id_type: str,
     ncbi_tax_id: int,
     mapper,
-    via: str = "uniprot",
+    via: str = 'uniprot',
 ) -> set[str]:
     """Two-step translation: source -> intermediate -> target."""
 
@@ -144,7 +144,7 @@ def map_mirna_fallback(
     ncbi_tax_id: int,
     mapper,
 ) -> set[str]:
-    """miRNA name fallback: try reciprocal name types.
+    """MiRNA name fallback: try reciprocal name types.
 
     miRNA names in data sources often confuse mature and precursor forms.
     If direct mapping fails, try the other form:
@@ -156,11 +156,11 @@ def map_mirna_fallback(
 
     # Define reciprocal pairs: (assumed_type, try_type, intermediate, other_intermediate)
     RECIPROCALS = [
-        ("mir-name", "mir-mat-name", "mir-pre", "mirbase"),
-        ("mir-mat-name", "mir-name", "mirbase", "mir-pre"),
+        ('mir-name', 'mir-mat-name', 'mir-pre', 'mirbase'),
+        ('mir-mat-name', 'mir-name', 'mirbase', 'mir-pre'),
     ]
 
-    for assumed, try_as, inter_a, inter_b in RECIPROCALS:
+    for assumed, try_as, _inter_a, inter_b in RECIPROCALS:
         if id_type != assumed:
             continue
 
@@ -193,7 +193,7 @@ def strip_prefix(
     mapper,
 ) -> set[str]:
     """Try removing a CURIE-style prefix (e.g. CHEBI:12345 -> 12345)."""
-    if ":" not in name:
+    if ':' not in name:
         return set()
-    stripped = name.split(":", 1)[1]
+    stripped = name.split(':', 1)[1]
     return mapper._direct_lookup(stripped, id_type, target_id_type, ncbi_tax_id)

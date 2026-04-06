@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
+import logging
 
 if TYPE_CHECKING:
     from omnipath_utils.mapping.backends._base import MappingBackend

@@ -3,7 +3,7 @@
 Example::
 
     from omnipath_utils.reflists import all_swissprots, is_swissprot
-    
+
     swissprots = all_swissprots()  # all human SwissProt IDs
     is_swissprot('P04637')        # True (TP53 is reviewed)
 """

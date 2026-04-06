@@ -15,14 +15,14 @@ from collections import defaultdict
 import requests
 
 from omnipath_utils.mapping.backends import register
-from omnipath_utils.mapping.backends._base import MappingBackend
 from omnipath_utils.mapping._id_types import IdTypeRegistry
+from omnipath_utils.mapping.backends._base import MappingBackend
 
 _log = logging.getLogger(__name__)
 
-IDMAPPING_RUN = "https://rest.uniprot.org/idmapping/run"
-IDMAPPING_STATUS = "https://rest.uniprot.org/idmapping/status/%s"
-IDMAPPING_STREAM = "https://rest.uniprot.org/idmapping/stream/%s"
+IDMAPPING_RUN = 'https://rest.uniprot.org/idmapping/run'
+IDMAPPING_STATUS = 'https://rest.uniprot.org/idmapping/status/%s'
+IDMAPPING_STREAM = 'https://rest.uniprot.org/idmapping/stream/%s'
 
 CHUNK_SIZE = 5000  # Max IDs per request
 POLL_INTERVAL = 3  # Seconds between status checks
@@ -46,33 +46,33 @@ class UploadListsBackend(MappingBackend):
         reg = IdTypeRegistry.get()
 
         from_db = (
-            reg.backend_column(id_type, "uniprot_from")
-            or reg.backend_column(id_type, "uploadlists")
+            reg.backend_column(id_type, 'uniprot_from')
+            or reg.backend_column(id_type, 'uploadlists')
         )
         to_db = (
-            reg.backend_column(target_id_type, "uniprot_to")
-            or reg.backend_column(target_id_type, "uploadlists")
+            reg.backend_column(target_id_type, 'uniprot_to')
+            or reg.backend_column(target_id_type, 'uploadlists')
         )
 
         if not from_db or not to_db:
             _log.debug(
-                "Uploadlists does not support %s -> %s",
+                'Uploadlists does not support %s -> %s',
                 id_type,
                 target_id_type,
             )
             return {}
 
         # For targeted translation: requires source_ids.
-        source_ids = kwargs.get("source_ids")
+        source_ids = kwargs.get('source_ids')
 
         if not source_ids:
             _log.debug(
-                "Uploadlists requires source_ids for targeted translation",
+                'Uploadlists requires source_ids for targeted translation',
             )
             return {}
 
         _log.info(
-            "%s: translating %d IDs (%s -> %s)",
+            '%s: translating %d IDs (%s -> %s)',
             self.name,
             len(source_ids),
             id_type,
@@ -82,7 +82,7 @@ class UploadListsBackend(MappingBackend):
         data = self._translate_batch(source_ids, from_db, to_db)
 
         _log.info(
-            "%s: loaded %d entries for %s -> %s",
+            '%s: loaded %d entries for %s -> %s',
             self.name,
             len(data),
             id_type,
@@ -129,7 +129,7 @@ class UploadListsBackend(MappingBackend):
         """Submit one chunk and poll for results."""
 
         _log.info(
-            "Submitting %d IDs to UniProt ID Mapping (%s -> %s)",
+            'Submitting %d IDs to UniProt ID Mapping (%s -> %s)',
             len(ids),
             from_db,
             to_db,
@@ -138,18 +138,18 @@ class UploadListsBackend(MappingBackend):
         # Submit job
         resp = requests.post(
             IDMAPPING_RUN,
-            data={"from": from_db, "to": to_db, "ids": ",".join(ids)},
+            data={'from': from_db, 'to': to_db, 'ids': ','.join(ids)},
             timeout=30,
         )
         resp.raise_for_status()
-        job_id = resp.json().get("jobId")
+        job_id = resp.json().get('jobId')
 
         if not job_id:
-            _log.warning("No jobId in response: %s", resp.text)
+            _log.warning('No jobId in response: %s', resp.text)
             return {}
 
         # Poll for completion
-        for attempt in range(MAX_POLL):
+        for _attempt in range(MAX_POLL):
             time.sleep(POLL_INTERVAL)
 
             status_resp = requests.get(
@@ -159,20 +159,20 @@ class UploadListsBackend(MappingBackend):
             status_data = status_resp.json()
 
             if (
-                "results" in status_data
-                or status_data.get("jobStatus") == "FINISHED"
+                'results' in status_data
+                or status_data.get('jobStatus') == 'FINISHED'
             ):
                 break
 
             if status_resp.status_code == 303:  # Redirect to results
                 break
 
-            if status_data.get("jobStatus") == "ERROR":
-                _log.warning("ID Mapping job failed: %s", status_data)
+            if status_data.get('jobStatus') == 'ERROR':
+                _log.warning('ID Mapping job failed: %s', status_data)
                 return {}
         else:
             _log.warning(
-                "ID Mapping job timed out after %d polls",
+                'ID Mapping job timed out after %d polls',
                 MAX_POLL,
             )
             return {}
@@ -180,16 +180,16 @@ class UploadListsBackend(MappingBackend):
         # Fetch results as TSV
         result_resp = requests.get(
             IDMAPPING_STREAM % job_id,
-            params={"format": "tsv"},
+            params={'format': 'tsv'},
             timeout=120,
         )
         result_resp.raise_for_status()
 
         data: dict[str, set[str]] = defaultdict(set)
-        lines = result_resp.text.strip().split("\n")
+        lines = result_resp.text.strip().split('\n')
 
         for line in lines[1:]:  # skip header
-            parts = line.split("\t")
+            parts = line.split('\t')
 
             if len(parts) >= 2:
                 src = parts[0].strip()
@@ -199,7 +199,7 @@ class UploadListsBackend(MappingBackend):
                     data[src].add(tgt)
 
         _log.info(
-            "ID Mapping: got %d mappings for %d source IDs",
+            'ID Mapping: got %d mappings for %d source IDs',
             len(data),
             len(ids),
         )
@@ -207,4 +207,4 @@ class UploadListsBackend(MappingBackend):
         return dict(data)
 
 
-register("uploadlists", UploadListsBackend)
+register('uploadlists', UploadListsBackend)

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
+import logging
 
 from pkg_infra.data import load
 

@@ -8,8 +8,8 @@ import logging
 _log = logging.getLogger(__name__)
 
 RE_UNIPROT = re.compile(
-    r"^([OPQ][0-9][A-Z0-9]{3}[0-9]"
-    r"|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$"
+    r'^([OPQ][0-9][A-Z0-9]{3}[0-9]'
+    r'|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$'
 )
 
 
@@ -58,7 +58,7 @@ def _primary_uniprot(
     result = set()
 
     for up in uniprots:
-        primary = mapper._direct_lookup(up, "uniprot-sec", "uniprot-pri", ncbi_tax_id)
+        primary = mapper._direct_lookup(up, 'uniprot-sec', 'uniprot-pri', ncbi_tax_id)
         if primary:
             result.update(primary)
         else:
@@ -97,14 +97,14 @@ def _trembl_to_swissprot(
             continue
 
         # It is a TrEMBL -- try to find SwissProt via gene symbol
-        genesymbols = mapper._direct_lookup(up, "trembl", "genesymbol", ncbi_tax_id)
+        genesymbols = mapper._direct_lookup(up, 'trembl', 'genesymbol', ncbi_tax_id)
         if not genesymbols:
-            genesymbols = mapper._direct_lookup(up, "uniprot", "genesymbol", ncbi_tax_id)
+            genesymbols = mapper._direct_lookup(up, 'uniprot', 'genesymbol', ncbi_tax_id)
 
         if genesymbols:
             # Map gene symbol -> SwissProt
             for gs in genesymbols:
-                swissprots = mapper._direct_lookup(gs, "genesymbol", "swissprot", ncbi_tax_id)
+                swissprots = mapper._direct_lookup(gs, 'genesymbol', 'swissprot', ncbi_tax_id)
                 if swissprots:
                     result.update(swissprots)
                     break

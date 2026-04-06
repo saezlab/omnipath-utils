@@ -1,7 +1,6 @@
 """Tests for the database module."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestDatabaseSchema:
@@ -9,7 +8,8 @@ class TestDatabaseSchema:
 
     def test_models_importable(self):
         from omnipath_utils.db._schema import (
-            Base, IdType, Backend, Organism, IdMapping, Reflist, BuildInfo,
+            IdType,
+            IdMapping,
         )
         assert IdType.__tablename__ == 'id_type'
         assert IdMapping.__tablename__ == 'id_mapping'
@@ -81,18 +81,18 @@ class TestDatabaseBuilder:
     @patch('omnipath_utils.db._build.ensure_schema')
     def test_builder_creation(self, mock_schema, mock_engine):
         from omnipath_utils.db._build import DatabaseBuilder
-        builder = DatabaseBuilder(db_url='postgresql://test/db')
+        _builder = DatabaseBuilder(db_url='postgresql://test/db')
         mock_engine.assert_called_once()
         mock_schema.assert_called_once()
 
 
 class TestBuildPipeline:
 
-    @patch("omnipath_utils.db._build.get_engine")
-    @patch("omnipath_utils.db._build.ensure_schema")
+    @patch('omnipath_utils.db._build.get_engine')
+    @patch('omnipath_utils.db._build.ensure_schema')
     def test_populate_from_ftp_importable(self, mock_schema, mock_engine):
         from omnipath_utils.db._build import DatabaseBuilder
-        builder = DatabaseBuilder(db_url="postgresql://test/db")
-        assert hasattr(builder, "populate_from_ftp")
-        assert hasattr(builder, "populate_mapping")
-        assert hasattr(builder, "build_all")
+        _builder = DatabaseBuilder(db_url='postgresql://test/db')
+        assert hasattr(_builder, 'populate_from_ftp')
+        assert hasattr(_builder, 'populate_mapping')
+        assert hasattr(_builder, 'build_all')

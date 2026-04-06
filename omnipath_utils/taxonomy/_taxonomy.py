@@ -18,14 +18,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Union
 
 from pkg_infra.data import load
 
 _log = logging.getLogger(__name__)
 
 # Type alias for anything that can identify an organism
-TaxonInput = Union[int, str]
+TaxonInput = int | str
 
 
 class TaxonomyManager:
@@ -190,7 +189,7 @@ class TaxonomyManager:
         return self._get_field(taxon, 'kegg_code')
 
     def ensure_mirbase_name(self, taxon: TaxonInput) -> str | None:
-        """miRBase three-letter organism code.
+        """MiRBase three-letter organism code.
 
         Args:
             taxon:

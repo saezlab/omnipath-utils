@@ -10,13 +10,13 @@ import logging
 import textwrap
 from collections import defaultdict
 
+from omnipath_utils.taxonomy import ensure_ensembl_name
 from omnipath_utils.mapping.backends import register
 from omnipath_utils.mapping.backends._base import MappingBackend
-from omnipath_utils.taxonomy import ensure_ensembl_name
 
 _log = logging.getLogger(__name__)
 
-BIOMART_URL = "https://www.ensembl.org/biomart/martservice"
+BIOMART_URL = 'https://www.ensembl.org/biomart/martservice'
 
 XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
@@ -27,7 +27,7 @@ XML_TEMPLATE = textwrap.dedent("""\
       </Dataset>
     </Query>""")
 
-ATTR_TEMPLATE = "<Attribute name=\"{name}\" />"
+ATTR_TEMPLATE = '<Attribute name="{name}" />'
 
 
 class BioMartBackend(MappingBackend):
@@ -52,10 +52,10 @@ class BioMartBackend(MappingBackend):
         ensembl_name = ensure_ensembl_name(ncbi_tax_id)
 
         if not ensembl_name:
-            _log.warning("No Ensembl name for organism %d", ncbi_tax_id)
+            _log.warning('No Ensembl name for organism %d', ncbi_tax_id)
             return None
 
-        return f"{ensembl_name}_gene_ensembl"
+        return f'{ensembl_name}_gene_ensembl'
 
     # ------------------------------------------------------------------
     # pypath.inputs path
@@ -87,7 +87,7 @@ class BioMartBackend(MappingBackend):
         )
 
         _log.info(
-            "BioMart query (pypath): attrs=%s, dataset=%s",
+            'BioMart query (pypath): attrs=%s, dataset=%s',
             attrs,
             dataset,
         )
@@ -131,15 +131,15 @@ class BioMartBackend(MappingBackend):
             if src_col != tgt_col
             else [src_col]
         )
-        attr_xml = "\n        ".join(
+        attr_xml = '\n        '.join(
             ATTR_TEMPLATE.format(name=a) for a in attrs
         )
 
         xml = XML_TEMPLATE.format(dataset=dataset, attributes=attr_xml)
-        xml = xml.replace("\n", "").replace("  ", "")  # compact
+        xml = xml.replace('\n', '').replace('  ', '')  # compact
 
         _log.info(
-            "Querying BioMart (direct HTTP): %s -> %s (dataset %s)",
+            'Querying BioMart (direct HTTP): %s -> %s (dataset %s)',
             id_type,
             target_id_type,
             dataset,
@@ -147,16 +147,16 @@ class BioMartBackend(MappingBackend):
 
         resp = requests.get(
             BIOMART_URL,
-            params={"query": xml},
+            params={'query': xml},
             timeout=120,
         )
         resp.raise_for_status()
 
         data: dict[str, set[str]] = defaultdict(set)
-        lines = resp.text.strip().split("\n")
+        lines = resp.text.strip().split('\n')
 
         for line in lines[1:]:  # skip header
-            parts = line.split("\t")
+            parts = line.split('\t')
 
             if len(parts) >= 2:
                 src = parts[0].strip()
@@ -168,4 +168,4 @@ class BioMartBackend(MappingBackend):
         return dict(data)
 
 
-register("biomart", BioMartBackend)
+register('biomart', BioMartBackend)

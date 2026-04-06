@@ -45,7 +45,6 @@ class UniProtFTPBackend(MappingBackend):
     yaml_key = 'uniprot'  # uses same columns as the REST backend
 
     def _read_via_pypath(self, id_type, target_id_type, ncbi_tax_id, *, src_col, tgt_col, **kwargs):
-        from pypath.inputs.uniprot_ftp import idmapping_stream, IDTYPE_MAP
         from pkg_infra.utils import swap_dict
 
         # Determine which side is the UniProt AC and which is the other ID type
@@ -69,8 +68,8 @@ class UniProtFTPBackend(MappingBackend):
     def _read_direct(self, id_type, target_id_type, ncbi_tax_id, *, src_col, tgt_col, **kwargs):
         # The FTP backend always needs the pypath input module for download
         # Fall back: use requests to download directly
-        import gzip
         import os
+        import gzip
         import tempfile
 
         import requests

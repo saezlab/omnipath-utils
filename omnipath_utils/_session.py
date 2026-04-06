@@ -2,4 +2,4 @@
 
 from pkg_infra.session import get_session
 
-session = get_session(workspace=.)
+session = get_session(workspace='.')

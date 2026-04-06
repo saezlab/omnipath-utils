@@ -37,7 +37,7 @@ class OrthologyManager:
         self._tables = {}  # (source, target, id_type, resource) -> OrthologyTable
 
     @classmethod
-    def get(cls):
+    def get(cls) -> OrthologyManager:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -210,15 +210,15 @@ class OrthologyManager:
         metadata = defaultdict(lambda: defaultdict(dict))
 
         for rec in records:
-            src_id = (
+            _src_id = (
                 rec.ensembl_peptide_id
                 if hasattr(rec, 'ensembl_peptide_id') else ''
             )
-            tgt_id = ''
+            _tgt_id = ''
             if hasattr(rec, '_fields'):
                 for f in rec._fields:
                     if 'homolog_ensembl_peptide' in f:
-                        tgt_id = getattr(rec, f, '')
+                        _tgt_id = getattr(rec, f, '')
                         break
 
             # Also get gene-level

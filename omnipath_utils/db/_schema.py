@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 from sqlalchemy import (
-    Column, Integer, SmallInteger, BigInteger, String, Float, Boolean,
-    DateTime, Text, ForeignKey, Index, func,
+    Text,
+    Float,
+    Index,
+    String,
+    Integer,
+    DateTime,
+    BigInteger,
+    ForeignKey,
+    SmallInteger,
+    func,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, DeclarativeBase, mapped_column
 
 
 class Base(DeclarativeBase):

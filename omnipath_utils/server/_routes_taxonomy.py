@@ -6,14 +6,14 @@ from litestar import Controller, get
 from litestar.params import Parameter
 
 from omnipath_utils.taxonomy import (
-    ensure_ncbi_tax_id,
-    ensure_common_name,
-    ensure_latin_name,
-    ensure_ensembl_name,
-    ensure_kegg_code,
-    ensure_mirbase_name,
-    ensure_oma_code,
     all_organisms,
+    ensure_oma_code,
+    ensure_kegg_code,
+    ensure_latin_name,
+    ensure_common_name,
+    ensure_ncbi_tax_id,
+    ensure_ensembl_name,
+    ensure_mirbase_name,
 )
 
 

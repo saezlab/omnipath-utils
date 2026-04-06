@@ -98,7 +98,7 @@ def ensure_kegg_code(taxon):
 
 
 def ensure_mirbase_name(taxon):
-    """miRBase three-letter organism code.
+    """MiRBase three-letter organism code.
 
     Args:
         taxon:

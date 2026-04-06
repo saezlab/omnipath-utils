@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import argparse
 import logging
+import argparse
 
 
 def build_cmd(args: list[str]):

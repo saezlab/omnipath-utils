@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
+import logging
 
 from omnipath_utils.mapping._id_types import IdTypeRegistry
 
@@ -23,11 +23,11 @@ class MappingBackend(ABC):
     """
 
     #: Human-readable name for log messages (e.g. "uniprot", "biomart").
-    name: str = ""
+    name: str = ''
 
     #: Key in the ``backends`` dict inside id_types.yaml
     #: (e.g. "uniprot", "ensembl").
-    yaml_key: str = ""
+    yaml_key: str = ''
 
     # ------------------------------------------------------------------
     # Public API
@@ -55,7 +55,7 @@ class MappingBackend(ABC):
 
         if not src_col or not tgt_col:
             _log.debug(
-                "%s backend does not support %s -> %s",
+                '%s backend does not support %s -> %s',
                 self.name,
                 id_type,
                 target_id_type,
@@ -63,7 +63,7 @@ class MappingBackend(ABC):
             return {}
 
         _log.info(
-            "%s: loading %s -> %s (organism %d)",
+            '%s: loading %s -> %s (organism %d)',
             self.name,
             id_type,
             target_id_type,
@@ -81,7 +81,7 @@ class MappingBackend(ABC):
             )
         except ImportError:
             _log.debug(
-                "%s: pypath not available, using direct HTTP",
+                '%s: pypath not available, using direct HTTP',
                 self.name,
             )
             data = self._read_direct(
@@ -94,7 +94,7 @@ class MappingBackend(ABC):
             )
 
         _log.info(
-            "%s: loaded %d entries for %s -> %s (organism %d)",
+            '%s: loaded %d entries for %s -> %s (organism %d)',
             self.name,
             len(data),
             id_type,

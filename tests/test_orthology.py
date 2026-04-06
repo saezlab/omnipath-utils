@@ -1,8 +1,8 @@
 """Tests for the orthology module."""
 
-import pytest
-from unittest.mock import patch, MagicMock
-from omnipath_utils.orthology._manager import OrthologyManager, OrthologyTable
+from unittest.mock import MagicMock, patch
+
+from omnipath_utils.orthology._manager import OrthologyTable, OrthologyManager
 
 
 class TestOrthologyTable:

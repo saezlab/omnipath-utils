@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import time
-import logging
 from typing import NamedTuple
+import logging
 
 _log = logging.getLogger(__name__)
 

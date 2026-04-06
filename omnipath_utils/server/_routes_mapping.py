@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 
 from litestar import Controller, get, post
-from litestar.params import Parameter
-
 from sqlalchemy.orm import Session
+from litestar.params import Parameter
 
 from omnipath_utils.db._query import translate_ids
 
@@ -30,8 +29,8 @@ def _resolve_and_cleanup(
     if target_resolved == 'uniprot':
 
         try:
-            from omnipath_utils.mapping._cleanup import uniprot_cleanup
             from omnipath_utils.mapping._mapper import Mapper
+            from omnipath_utils.mapping._cleanup import uniprot_cleanup
 
             mapper = Mapper.get()
 
@@ -167,7 +166,7 @@ class MappingController(Controller):
     path = '/mapping'
 
     @get('/translate')
-    async def translate(
+    async def translate(  # noqa: D417
         self,
         session: Session,
         identifiers: str = Parameter(

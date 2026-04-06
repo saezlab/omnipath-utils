@@ -6,7 +6,7 @@ import os
 import re
 import logging
 import threading
-from typing import Iterable
+from collections.abc import Iterable
 
 from omnipath_utils._constants import DEFAULT_ORGANISM
 from omnipath_utils.mapping._table import MappingTable, MappingTableKey
@@ -17,14 +17,14 @@ _log = logging.getLogger(__name__)
 
 # UniProt AC format
 RE_UNIPROT = re.compile(
-    r"^[OPQ][0-9][A-Z0-9]{3}[0-9]$"
-    r"|^[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}$",
+    r'^[OPQ][0-9][A-Z0-9]{3}[0-9]$'
+    r'|^[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}$',
 )
 
 # Source ID types where case fallbacks should NOT be applied
 _UNIPROT_SOURCE_TYPES = frozenset({
-    "uniprot", "swissprot", "trembl",
-    "uniprot-sec", "uniprot-pri",
+    'uniprot', 'swissprot', 'trembl',
+    'uniprot-sec', 'uniprot-pri',
 })
 
 
@@ -71,8 +71,8 @@ class Mapper:
         import platformdirs
 
         return os.path.join(
-            platformdirs.user_cache_dir("omnipath_utils"),
-            "mapping",
+            platformdirs.user_cache_dir('omnipath_utils'),
+            'mapping',
         )
 
     def _direct_lookup(
@@ -152,7 +152,7 @@ class Mapper:
             self._id_types.resolve(target_id_type) or target_id_type
         )
 
-        _target_is_uniprot = target_id_type == "uniprot"
+        _target_is_uniprot = target_id_type == 'uniprot'
 
         # Same type -- still do cleanup if target is uniprot
         if id_type == target_id_type:
@@ -180,7 +180,7 @@ class Mapper:
 
         # Gene symbol fallbacks -- skip for UniProt/TrEMBL source types
         if (
-            id_type in ("genesymbol", "genesymbol-syn")
+            id_type in ('genesymbol', 'genesymbol-syn')
             and id_type not in _UNIPROT_SOURCE_TYPES
         ):
             from omnipath_utils.mapping._special import (
@@ -200,7 +200,7 @@ class Mapper:
                 return result
 
         # RefSeq version handling
-        if id_type.startswith("refseq"):
+        if id_type.startswith('refseq'):
             from omnipath_utils.mapping._special import map_refseq
 
             result = map_refseq(
@@ -216,7 +216,7 @@ class Mapper:
                 return result
 
         # Ensembl version stripping
-        if id_type.startswith("ens") and "." in name:
+        if id_type.startswith('ens') and '.' in name:
             from omnipath_utils.mapping._special import (
                 map_ensembl_strip_version,
             )
@@ -234,7 +234,7 @@ class Mapper:
                 return result
 
         # miRNA reciprocal fallback
-        if id_type.startswith("mir-"):
+        if id_type.startswith('mir-'):
             from omnipath_utils.mapping._special import map_mirna_fallback
 
             result = map_mirna_fallback(
@@ -245,7 +245,7 @@ class Mapper:
                 return result
 
         # CURIE prefix stripping
-        if ":" in name:
+        if ':' in name:
             from omnipath_utils.mapping._special import strip_prefix
 
             result = strip_prefix(
@@ -261,7 +261,7 @@ class Mapper:
                 return result
 
         # Chain translation via uniprot
-        if id_type != "uniprot" and target_id_type != "uniprot":
+        if id_type != 'uniprot' and target_id_type != 'uniprot':
             from omnipath_utils.mapping._special import chain_map
 
             result = chain_map(
@@ -422,7 +422,7 @@ class Mapper:
                     )
             except Exception as e:
                 _log.warning(
-                    "Failed to load %s -> %s from %s: %s",
+                    'Failed to load %s -> %s from %s: %s',
                     id_type,
                     target_id_type,
                     backend_name,
@@ -433,17 +433,17 @@ class Mapper:
 
     # Map from backend registry name to id_types.yaml backend key
     _BACKEND_YAML_KEYS: dict[str, str] = {
-        "uniprot": "uniprot",
-        "uniprot_ftp": "uniprot",
-        "biomart": "ensembl",
+        'uniprot': 'uniprot',
+        'uniprot_ftp': 'uniprot',
+        'biomart': 'ensembl',
     }
 
     # Backends that override read() and do not use yaml_key column lookup
     _CUSTOM_BACKENDS: tuple[str, ...] = (
-        "mirbase",
-        "unichem",
-        "ramp",
-        "hmdb",
+        'mirbase',
+        'unichem',
+        'ramp',
+        'hmdb',
     )
 
     def _find_backends(
@@ -495,7 +495,7 @@ class Mapper:
         expired = [k for k, t in self.tables.items() if t.expired]
 
         for k in expired:
-            _log.debug("Removing expired table: %s", k)
+            _log.debug('Removing expired table: %s', k)
             del self.tables[k]
 
     def id_types(self) -> list[str]:
@@ -505,6 +505,6 @@ class Mapper:
 
     def __repr__(self) -> str:
         return (
-            f"<Mapper tables={len(self.tables)}, "
-            f"organism={self.ncbi_tax_id}>"
+            f'<Mapper tables={len(self.tables)}, '
+            f'organism={self.ncbi_tax_id}>'
         )

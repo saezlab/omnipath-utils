@@ -9,8 +9,8 @@ import logging
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from omnipath_utils.db._connection import get_engine, ensure_schema, SCHEMA
 from omnipath_utils.db._schema import Base, IdType, Backend, Organism, BuildInfo
+from omnipath_utils.db._connection import SCHEMA, get_engine, ensure_schema
 from omnipath_utils.mapping._id_types import IdTypeRegistry
 from omnipath_utils.taxonomy._taxonomy import TaxonomyManager
 
@@ -91,7 +91,6 @@ class DatabaseBuilder:
 
         Uses the mapping infrastructure to load data, then bulk inserts via COPY.
         """
-        from omnipath_utils.db._schema import IdMapping
         from omnipath_utils.mapping._reader import MapReader
 
         _log.info(
@@ -141,13 +140,13 @@ class DatabaseBuilder:
             session.commit()
 
         # Bulk insert via COPY using psycopg3
-        from omnipath_utils.db._connection import get_connection, get_db_url
+        from omnipath_utils.db._connection import get_connection
         conn = get_connection(self._db_url)
 
         row_count = 0
         with conn.cursor() as cur:
             with cur.copy(
-                f"COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN"
+                f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
             ) as copy:
                 for source_id, target_ids in data.items():
                     for target_id in target_ids:
@@ -187,7 +186,7 @@ class DatabaseBuilder:
         Loads SwissProt and TrEMBL ID sets via the reflists module and
         bulk-inserts them into the reflist table using COPY.
         """
-        from omnipath_utils.reflists import all_swissprots, all_trembls
+        from omnipath_utils.reflists import all_trembls, all_swissprots
         from omnipath_utils.db._connection import get_connection
 
         start = time.time()
@@ -324,7 +323,7 @@ class DatabaseBuilder:
         2. Collect NCBI_TaxID rows in a temp table
         3. UPDATE id_mapping.ncbi_tax_id from the temp table
         """
-        from omnipath_utils.db._connection import get_connection, SCHEMA
+        from omnipath_utils.db._connection import SCHEMA, get_connection
 
         _log.info('Starting full FTP idmapping build')
         start = time.time()
