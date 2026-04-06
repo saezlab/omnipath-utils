@@ -755,3 +755,255 @@ class TestMapperIntegration:
         # map_name with uniprot source should NOT try uppercase
         result = mapper.map_name("p04637", "uniprot", "genesymbol")
         assert result == set()  # no fallback, just empty
+
+
+# ---- DataFrame translation tests ----
+
+
+class TestTranslateColumn:
+    """Tests for translate_column."""
+
+    def setup_method(self):
+        """Reset singleton for test isolation."""
+        Mapper._instance = None
+
+    def test_basic_translation(self):
+        import pandas as pd
+        from omnipath_utils.mapping import translate_column
+
+        mapper = Mapper()
+        table = MappingTable(
+            data={'P04637': {'TP53'}, 'P00533': {'EGFR'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[table.key] = table
+        Mapper._instance = mapper
+
+        df = pd.DataFrame({'protein': ['P04637', 'P00533', 'FAKE']})
+        result = translate_column(df, 'protein', 'uniprot', 'genesymbol')
+
+        assert 'genesymbol' in result.columns
+        assert result.loc[
+            result['protein'] == 'P04637', 'genesymbol'
+        ].iloc[0] == 'TP53'
+        assert result.loc[
+            result['protein'] == 'P00533', 'genesymbol'
+        ].iloc[0] == 'EGFR'
+
+    def test_expand_one_to_many(self):
+        import pandas as pd
+        from omnipath_utils.mapping import translate_column
+
+        mapper = Mapper()
+        table = MappingTable(
+            data={'TP53': {'P04637', 'A0A024R1R8'}},
+            id_type='genesymbol',
+            target_id_type='uniprot',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[table.key] = table
+        Mapper._instance = mapper
+
+        df = pd.DataFrame({'gene': ['TP53']})
+        result = translate_column(
+            df, 'gene', 'genesymbol', 'uniprot', expand=True,
+        )
+
+        # Should have 2 rows (one per UniProt)
+        assert len(result) == 2
+        assert set(result['uniprot']) == {'P04637', 'A0A024R1R8'}
+
+    def test_no_expand(self):
+        import pandas as pd
+        from omnipath_utils.mapping import translate_column
+
+        mapper = Mapper()
+        table = MappingTable(
+            data={'TP53': {'P04637', 'A0A024R1R8'}},
+            id_type='genesymbol',
+            target_id_type='uniprot',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[table.key] = table
+        Mapper._instance = mapper
+
+        df = pd.DataFrame({'gene': ['TP53']})
+        result = translate_column(
+            df, 'gene', 'genesymbol', 'uniprot', expand=False,
+        )
+
+        # Should have 1 row (picked one)
+        assert len(result) == 1
+        assert result['uniprot'].iloc[0] in {'P04637', 'A0A024R1R8'}
+
+    def test_drop_untranslated(self):
+        import pandas as pd
+        from omnipath_utils.mapping import translate_column
+
+        mapper = Mapper()
+        table = MappingTable(
+            data={'P04637': {'TP53'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[table.key] = table
+        Mapper._instance = mapper
+
+        df = pd.DataFrame({'protein': ['P04637', 'FAKE']})
+        result = translate_column(
+            df, 'protein', 'uniprot', 'genesymbol',
+            keep_untranslated=False,
+        )
+
+        assert len(result) == 1
+        assert result['protein'].iloc[0] == 'P04637'
+
+    def test_keep_untranslated(self):
+        import pandas as pd
+        from omnipath_utils.mapping import translate_column
+
+        mapper = Mapper()
+        table = MappingTable(
+            data={'P04637': {'TP53'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[table.key] = table
+        Mapper._instance = mapper
+
+        df = pd.DataFrame({'protein': ['P04637', 'FAKE']})
+        result = translate_column(
+            df, 'protein', 'uniprot', 'genesymbol',
+            keep_untranslated=True,
+        )
+
+        assert len(result) == 2
+        assert pd.isna(
+            result.loc[
+                result['protein'] == 'FAKE', 'genesymbol'
+            ].iloc[0]
+        )
+
+    def test_custom_new_column(self):
+        import pandas as pd
+        from omnipath_utils.mapping import translate_column
+
+        mapper = Mapper()
+        table = MappingTable(
+            data={'P04637': {'TP53'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[table.key] = table
+        Mapper._instance = mapper
+
+        df = pd.DataFrame({'protein': ['P04637']})
+        result = translate_column(
+            df, 'protein', 'uniprot', 'genesymbol',
+            new_column='gene_name',
+        )
+
+        assert 'gene_name' in result.columns
+        assert 'genesymbol' not in result.columns
+
+    def test_does_not_modify_input(self):
+        import pandas as pd
+        from omnipath_utils.mapping import translate_column
+
+        mapper = Mapper()
+        table = MappingTable(
+            data={'P04637': {'TP53'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[table.key] = table
+        Mapper._instance = mapper
+
+        df = pd.DataFrame({'protein': ['P04637']})
+        original_cols = list(df.columns)
+        _ = translate_column(df, 'protein', 'uniprot', 'genesymbol')
+
+        assert list(df.columns) == original_cols
+
+
+class TestTranslateColumns:
+    """Tests for translate_columns."""
+
+    def setup_method(self):
+        """Reset singleton for test isolation."""
+        Mapper._instance = None
+
+    def test_multi_translation(self):
+        import pandas as pd
+        from omnipath_utils.mapping import translate_columns
+
+        mapper = Mapper()
+
+        t1 = MappingTable(
+            data={'P04637': {'TP53'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
+            ncbi_tax_id=9606,
+        )
+        t2 = MappingTable(
+            data={'P04637': {'7157'}},
+            id_type='uniprot',
+            target_id_type='entrez',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[t1.key] = t1
+        mapper.tables[t2.key] = t2
+        Mapper._instance = mapper
+
+        df = pd.DataFrame({'protein': ['P04637']})
+        result = translate_columns(
+            df,
+            ('protein', 'uniprot', 'genesymbol'),
+            ('protein', 'uniprot', 'entrez', 'entrez_id'),
+            expand=False,
+        )
+
+        assert 'genesymbol' in result.columns
+        assert 'entrez_id' in result.columns
+        assert result['genesymbol'].iloc[0] == 'TP53'
+        assert result['entrez_id'].iloc[0] == '7157'
+
+    def test_chained_expand(self):
+        import pandas as pd
+        from omnipath_utils.mapping import translate_columns
+
+        mapper = Mapper()
+
+        t1 = MappingTable(
+            data={'P04637': {'TP53'}},
+            id_type='uniprot',
+            target_id_type='genesymbol',
+            ncbi_tax_id=9606,
+        )
+        t2 = MappingTable(
+            data={'P04637': {'7157', '99999'}},
+            id_type='uniprot',
+            target_id_type='entrez',
+            ncbi_tax_id=9606,
+        )
+        mapper.tables[t1.key] = t1
+        mapper.tables[t2.key] = t2
+        Mapper._instance = mapper
+
+        df = pd.DataFrame({'protein': ['P04637']})
+        result = translate_columns(
+            df,
+            ('protein', 'uniprot', 'genesymbol'),
+            ('protein', 'uniprot', 'entrez'),
+            expand=True,
+        )
+
+        # 1 genesymbol * 2 entrez = 2 rows
+        assert len(result) == 2
+        assert set(result['entrez']) == {'7157', '99999'}
