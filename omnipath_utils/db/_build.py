@@ -284,9 +284,9 @@ class DatabaseBuilder:
                 BuildInfo(
                     table_name='reflist',
                     source_type='uniprot',
-                    target_type=None,
+                    target_type='reflist (swissprot + trembl)',
                     ncbi_tax_id=ncbi_tax_id,
-                    backend=None,
+                    backend='reflists',
                     row_count=total_rows,
                     duration_secs=duration,
                     status='done',

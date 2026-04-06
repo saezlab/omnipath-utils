@@ -182,6 +182,73 @@ def _apply_fallbacks(
     return result
 
 
+def _build_translate_response(
+    id_list: list[str],
+    result: dict[str, set[str]],
+    id_type: str,
+    target_id_type: str,
+    ncbi_tax_id: int,
+    raw: bool,
+    backends_used: set[str],
+    backend: str | None,
+    loading: bool,
+) -> dict:
+    """Build the response dict for translate endpoints."""
+
+    mapped = {k: sorted(v) for k, v in result.items() if v}
+    unmapped = [i for i in id_list if i not in result or not result[i]]
+
+    meta = {
+        'id_type': id_type,
+        'target_id_type': target_id_type,
+        'ncbi_tax_id': ncbi_tax_id,
+        'total_input': len(id_list),
+        'total_mapped': len(mapped),
+        'raw': raw,
+        'backend': sorted(backends_used) if backends_used else backend,
+        'loading': loading,
+    }
+
+    if loading:
+        meta['loading_note'] = (
+            f'Table {id_type} -> {target_id_type} is being loaded. '
+            'Try again in a few minutes.'
+        )
+
+    return {
+        'results': mapped,
+        'unmapped': unmapped,
+        'meta': meta,
+    }
+
+
+def _maybe_trigger_load(
+    result: dict,
+    raw: bool,
+    id_type_resolved: str,
+    target_resolved: str,
+    ncbi_tax_id: int,
+) -> bool:
+    """Trigger background loading if no results found. Returns loading flag."""
+
+    if result or raw:
+        return False
+
+    from omnipath_utils.db._loader import is_pending, request_table
+    from omnipath_utils.db._connection import get_db_url
+
+    if is_pending(id_type_resolved, target_resolved, ncbi_tax_id):
+        return True
+
+    queued = request_table(
+        id_type_resolved,
+        target_resolved,
+        ncbi_tax_id,
+        db_url=get_db_url(),
+    )
+    return queued
+
+
 class MappingController(Controller):
     """ID translation endpoints."""
 
@@ -237,6 +304,15 @@ class MappingController(Controller):
             ncbi_tax_id,
         )
 
+        # If no results from DB, trigger background load
+        loading = _maybe_trigger_load(
+            result,
+            raw,
+            id_type_resolved,
+            target_resolved,
+            ncbi_tax_id,
+        )
+
         if not raw:
             result = _apply_fallbacks(
                 session,
@@ -253,22 +329,17 @@ class MappingController(Controller):
                 ncbi_tax_id,
             )
 
-        mapped = {k: sorted(v) for k, v in result.items() if v}
-        unmapped = [i for i in id_list if i not in result or not result[i]]
-
-        return {
-            'results': mapped,
-            'unmapped': unmapped,
-            'meta': {
-                'id_type': id_type,
-                'target_id_type': target_id_type,
-                'ncbi_tax_id': ncbi_tax_id,
-                'total_input': len(id_list),
-                'total_mapped': len(mapped),
-                'raw': raw,
-                'backend': sorted(backends_used) if backends_used else backend,
-            },
-        }
+        return _build_translate_response(
+            id_list,
+            result,
+            id_type,
+            target_id_type,
+            ncbi_tax_id,
+            raw,
+            backends_used,
+            backend,
+            loading,
+        )
 
     @post('/translate')
     async def translate_post(
@@ -309,6 +380,15 @@ class MappingController(Controller):
             ncbi_tax_id,
         )
 
+        # If no results from DB, trigger background load
+        loading = _maybe_trigger_load(
+            result,
+            raw,
+            id_type_resolved,
+            target_resolved,
+            ncbi_tax_id,
+        )
+
         if not raw:
             result = _apply_fallbacks(
                 session,
@@ -325,23 +405,17 @@ class MappingController(Controller):
                 ncbi_tax_id,
             )
 
-        mapped = {k: sorted(v) for k, v in result.items() if v}
-        unmapped = [i for i in id_list if i not in result or not result[i]]
-
-        return {
-            'results': mapped,
-            'unmapped': unmapped,
-            'meta': {
-                'id_type': id_type,
-                'target_id_type': target_id_type,
-                'ncbi_tax_id': ncbi_tax_id,
-                'total_input': len(id_list),
-                'total_mapped': len(mapped),
-                'raw': raw,
-                'backend': sorted(backends_used) if backends_used else backend,
-            },
-        }
-
+        return _build_translate_response(
+            id_list,
+            result,
+            id_type,
+            target_id_type,
+            ncbi_tax_id,
+            raw,
+            backends_used,
+            backend,
+            loading,
+        )
 
     @get('/identify')
     async def identify(
@@ -393,7 +467,9 @@ class MappingController(Controller):
         id_type_resolved = reg.resolve(id_type) or id_type
 
         id_list = [i.strip() for i in identifiers.split(',') if i.strip()]
-        result = get_all_mappings(session, id_list, id_type_resolved, ncbi_tax_id)
+        result = get_all_mappings(
+            session, id_list, id_type_resolved, ncbi_tax_id
+        )
 
         return {
             'results': result,
@@ -421,3 +497,21 @@ class MappingController(Controller):
             }
             for name in reg.all_names()
         ]
+
+    @get('/loading')
+    async def loading_status(self) -> dict:
+        """Check which tables are currently being loaded."""
+
+        from omnipath_utils.db._loader import _pending
+
+        return {
+            'loading': [
+                {
+                    'source_type': s,
+                    'target_type': t,
+                    'ncbi_tax_id': n,
+                }
+                for s, t, n in sorted(_pending)
+            ],
+            'count': len(_pending),
+        }
