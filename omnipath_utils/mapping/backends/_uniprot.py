@@ -147,8 +147,16 @@ class UniProtBackend(MappingBackend):
             fields_str,
         )
 
+        # Apply reviewed filter for swissprot/trembl targets
+        reviewed = self._reviewed_filter(id_type, target_id_type)
+        query = f'(organism_id:{ncbi_tax_id})'
+        if reviewed is True:
+            query += ' AND (reviewed:true)'
+        elif reviewed is False:
+            query += ' AND (reviewed:false)'
+
         params = {
-            'query': f'(organism_id:{ncbi_tax_id})',
+            'query': query,
             'fields': fields_str,
             'format': 'tsv',
         }
