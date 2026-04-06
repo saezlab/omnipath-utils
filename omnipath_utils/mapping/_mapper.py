@@ -347,8 +347,17 @@ class Mapper:
     # Map from backend registry name to id_types.yaml backend key
     _BACKEND_YAML_KEYS: dict[str, str] = {
         "uniprot": "uniprot",
+        "uniprot_ftp": "uniprot",
         "biomart": "ensembl",
     }
+
+    # Backends that override read() and do not use yaml_key column lookup
+    _CUSTOM_BACKENDS: tuple[str, ...] = (
+        "mirbase",
+        "unichem",
+        "ramp",
+        "hmdb",
+    )
 
     def _find_backends(
         self,
@@ -369,6 +378,9 @@ class Mapper:
 
             if src_col and tgt_col:
                 backends.append(backend_name)
+
+        # Custom backends that handle their own ID type support check
+        backends.extend(self._CUSTOM_BACKENDS)
 
         return backends
 
