@@ -173,7 +173,9 @@ class TestUniProtCleanup:
         assert not is_uniprot_ac("12345")
 
     def test_cleanup_filters_invalid(self):
-        result = uniprot_cleanup({"P04637", "TP53", "FAKE"}, 9606)
+        mock_mapper = MagicMock()
+        mock_mapper._direct_lookup = MagicMock(return_value=set())
+        result = uniprot_cleanup({"P04637", "TP53", "FAKE"}, 9606, mapper=mock_mapper)
         assert "P04637" in result
         assert "TP53" not in result
         assert "FAKE" not in result

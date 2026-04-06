@@ -4,6 +4,8 @@ Handles ID types that need non-standard translation paths:
 - Gene symbols: case normalization, synonym lookup
 - RefSeq: version number handling
 - Chain translation: via intermediate ID type
+- miRNA: reciprocal name type fallback
+- CURIE prefix stripping
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ def map_genesymbol_fallbacks(
     2. UPPER case
     3. Capitalized (for rodent symbols like Trp53)
     4. Synonym lookup (genesymbol-syn)
-    5. If not strict: first 5 chars, append "1"
+    5. If not strict: append "1" (isoform suffixes)
     """
 
     # 1. Direct lookup (already tried by caller)
@@ -57,12 +59,6 @@ def map_genesymbol_fallbacks(
     result = mapper._direct_lookup(f"{name}1", "genesymbol", target_id_type, ncbi_tax_id)
     if result:
         return result
-
-    # 6. Try first 5 characters
-    if len(name) > 5:
-        result = mapper._direct_lookup(name[:5], "genesymbol", target_id_type, ncbi_tax_id)
-        if result:
-            return result
 
     return set()
 
@@ -126,7 +122,7 @@ def chain_map(
     mapper,
     via: str = "uniprot",
 ) -> set[str]:
-    """Two-step translation: source → intermediate → target."""
+    """Two-step translation: source -> intermediate -> target."""
 
     intermediates = mapper.map_name(name, id_type, via, ncbi_tax_id)
 
@@ -139,3 +135,65 @@ def chain_map(
         result.update(targets)
 
     return result
+
+
+def map_mirna_fallback(
+    name: str,
+    id_type: str,
+    target_id_type: str,
+    ncbi_tax_id: int,
+    mapper,
+) -> set[str]:
+    """miRNA name fallback: try reciprocal name types.
+
+    miRNA names in data sources often confuse mature and precursor forms.
+    If direct mapping fails, try the other form:
+    - mir-mat-name (mature, e.g. hsa-miR-21-5p) <-> mir-name (precursor, e.g. hsa-mir-21)
+
+    Strategy: swap the name type assumption, map to miRBase accession
+    as intermediate, then to the target.
+    """
+
+    # Define reciprocal pairs: (assumed_type, try_type, intermediate, other_intermediate)
+    RECIPROCALS = [
+        ("mir-name", "mir-mat-name", "mir-pre", "mirbase"),
+        ("mir-mat-name", "mir-name", "mirbase", "mir-pre"),
+    ]
+
+    for assumed, try_as, inter_a, inter_b in RECIPROCALS:
+        if id_type != assumed:
+            continue
+
+        # Try as the other name type -> get accession
+        accessions = mapper._direct_lookup(name, try_as, inter_b, ncbi_tax_id)
+
+        if not accessions:
+            continue
+
+        if target_id_type == inter_b:
+            return accessions
+
+        # Chain: accession -> target
+        result = set()
+        for acc in accessions:
+            targets = mapper._direct_lookup(acc, inter_b, target_id_type, ncbi_tax_id)
+            result.update(targets)
+
+        if result:
+            return result
+
+    return set()
+
+
+def strip_prefix(
+    name: str,
+    id_type: str,
+    target_id_type: str,
+    ncbi_tax_id: int,
+    mapper,
+) -> set[str]:
+    """Try removing a CURIE-style prefix (e.g. CHEBI:12345 -> 12345)."""
+    if ":" not in name:
+        return set()
+    stripped = name.split(":", 1)[1]
+    return mapper._direct_lookup(stripped, id_type, target_id_type, ncbi_tax_id)

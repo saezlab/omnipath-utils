@@ -21,6 +21,12 @@ RE_UNIPROT = re.compile(
     r"|^[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}$",
 )
 
+# Source ID types where case fallbacks should NOT be applied
+_UNIPROT_SOURCE_TYPES = frozenset({
+    "uniprot", "swissprot", "trembl",
+    "uniprot-sec", "uniprot-pri",
+})
+
 
 class Mapper:
     """Central ID translation manager.
@@ -130,7 +136,7 @@ class Mapper:
             ncbi_tax_id: Organism. Defaults to human (9606).
             strict: If True, skip fuzzy gene symbol fallbacks.
             uniprot_cleanup_flag: If True and target is UniProt,
-                run cleanup (secondary -> primary AC translation).
+                run cleanup (secondary -> primary, SwissProt preference).
 
         Returns:
             Set of target identifiers. Empty set if no mapping found.
@@ -146,8 +152,15 @@ class Mapper:
             self._id_types.resolve(target_id_type) or target_id_type
         )
 
-        # Same type
+        _target_is_uniprot = target_id_type == "uniprot"
+
+        # Same type -- still do cleanup if target is uniprot
         if id_type == target_id_type:
+            if _target_is_uniprot and uniprot_cleanup_flag:
+                from omnipath_utils.mapping._cleanup import uniprot_cleanup
+
+                return uniprot_cleanup({name}, ncbi_tax_id, mapper=self)
+
             return {name}
 
         # Direct lookup
@@ -156,15 +169,20 @@ class Mapper:
         )
 
         if result:
-            if target_id_type == "uniprot" and uniprot_cleanup_flag:
+            if _target_is_uniprot and uniprot_cleanup_flag:
                 from omnipath_utils.mapping._cleanup import uniprot_cleanup
 
                 result = uniprot_cleanup(result, ncbi_tax_id, mapper=self)
 
             return result
 
-        # Special cases for gene symbols
-        if id_type in ("genesymbol", "genesymbol-syn"):
+        # --- Fallback strategies (no direct result) ---
+
+        # Gene symbol fallbacks -- skip for UniProt/TrEMBL source types
+        if (
+            id_type in ("genesymbol", "genesymbol-syn")
+            and id_type not in _UNIPROT_SOURCE_TYPES
+        ):
             from omnipath_utils.mapping._special import (
                 map_genesymbol_fallbacks,
             )
@@ -174,6 +192,11 @@ class Mapper:
             )
 
             if result:
+                if _target_is_uniprot and uniprot_cleanup_flag:
+                    from omnipath_utils.mapping._cleanup import uniprot_cleanup
+
+                    result = uniprot_cleanup(result, ncbi_tax_id, mapper=self)
+
                 return result
 
         # RefSeq version handling
@@ -185,6 +208,11 @@ class Mapper:
             )
 
             if result:
+                if _target_is_uniprot and uniprot_cleanup_flag:
+                    from omnipath_utils.mapping._cleanup import uniprot_cleanup
+
+                    result = uniprot_cleanup(result, ncbi_tax_id, mapper=self)
+
                 return result
 
         # Ensembl version stripping
@@ -198,6 +226,38 @@ class Mapper:
             )
 
             if result:
+                if _target_is_uniprot and uniprot_cleanup_flag:
+                    from omnipath_utils.mapping._cleanup import uniprot_cleanup
+
+                    result = uniprot_cleanup(result, ncbi_tax_id, mapper=self)
+
+                return result
+
+        # miRNA reciprocal fallback
+        if id_type.startswith("mir-"):
+            from omnipath_utils.mapping._special import map_mirna_fallback
+
+            result = map_mirna_fallback(
+                name, id_type, target_id_type, ncbi_tax_id, self,
+            )
+
+            if result:
+                return result
+
+        # CURIE prefix stripping
+        if ":" in name:
+            from omnipath_utils.mapping._special import strip_prefix
+
+            result = strip_prefix(
+                name, id_type, target_id_type, ncbi_tax_id, self,
+            )
+
+            if result:
+                if _target_is_uniprot and uniprot_cleanup_flag:
+                    from omnipath_utils.mapping._cleanup import uniprot_cleanup
+
+                    result = uniprot_cleanup(result, ncbi_tax_id, mapper=self)
+
                 return result
 
         # Chain translation via uniprot
@@ -217,6 +277,11 @@ class Mapper:
         )
 
         if result:
+            if _target_is_uniprot and uniprot_cleanup_flag:
+                from omnipath_utils.mapping._cleanup import uniprot_cleanup
+
+                result = uniprot_cleanup(result, ncbi_tax_id, mapper=self)
+
             return result
 
         return set()
