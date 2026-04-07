@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from litestar import Controller, get
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 from litestar.params import Parameter
+
+from omnipath_utils.db._connection import SCHEMA
 
 
 class ReflistController(Controller):
@@ -19,17 +23,25 @@ class ReflistController(Controller):
     @get('/{list_name:str}')
     async def get_reflist(
         self,
+        session: Session,
         list_name: str,
         ncbi_tax_id: int = Parameter(default=9606),
     ) -> dict:
-        """Get a reference list."""
-        from omnipath_utils.reflists import get_reflist
+        """Get a reference list from the database."""
 
-        ids = get_reflist(list_name, ncbi_tax_id)
+        rows = session.execute(
+            text(
+                f'SELECT identifier FROM {SCHEMA}.reflist '
+                'WHERE list_name = :name AND ncbi_tax_id = :tax'
+            ),
+            {'name': list_name, 'tax': ncbi_tax_id},
+        ).fetchall()
+
+        ids = sorted(row[0] for row in rows)
 
         return {
             'list_name': list_name,
             'ncbi_tax_id': ncbi_tax_id,
             'count': len(ids),
-            'identifiers': sorted(ids),
+            'identifiers': ids,
         }
