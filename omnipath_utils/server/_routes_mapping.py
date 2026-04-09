@@ -506,3 +506,35 @@ class MappingController(Controller):
             ],
             'count': len(_pending),
         }
+
+    @get('/table')
+    async def get_table(
+        self,
+        session: Session,
+        id_type: str = Parameter(description='Source ID type'),
+        target_id_type: str = Parameter(description='Target ID type'),
+        ncbi_tax_id: int = Parameter(default=9606),
+    ) -> dict:
+        """Get a full translation table."""
+
+        from omnipath_utils.mapping._id_types import IdTypeRegistry
+
+        reg = IdTypeRegistry.get()
+        id_type_r = reg.resolve(id_type) or id_type
+        target_r = reg.resolve(target_id_type) or target_id_type
+
+        data, _ = translate_ids(session, None, id_type_r, target_r, ncbi_tax_id)
+
+        # Convert sets to sorted lists for JSON
+        result = {k: sorted(v) for k, v in data.items()}
+
+        return {
+            'table': result,
+            'meta': {
+                'id_type': id_type,
+                'target_id_type': target_id_type,
+                'ncbi_tax_id': ncbi_tax_id,
+                'count': len(result),
+            },
+        }
+

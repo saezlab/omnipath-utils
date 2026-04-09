@@ -57,3 +57,36 @@ class OrthologyController(Controller):
                 'total_mapped': len(mapped),
             },
         }
+
+    @get('/table')
+    async def get_orthology_table(
+        self,
+        source: int = Parameter(default=9606),
+        target: int = Parameter(default=10090),
+        id_type: str = Parameter(default='genesymbol'),
+        resource: str = Parameter(default=None, required=False),
+    ) -> dict:
+        """Get a full orthology table."""
+
+        from omnipath_utils.orthology import get_table
+
+        result = get_table(
+            source=source,
+            target=target,
+            id_type=id_type,
+            resource=resource,
+        )
+
+        mapped = {k: sorted(v) for k, v in result.items() if v}
+
+        return {
+            'table': mapped,
+            'meta': {
+                'source': source,
+                'target': target,
+                'id_type': id_type,
+                'resource': resource,
+                'count': len(mapped),
+            },
+        }
+

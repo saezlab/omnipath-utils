@@ -15,18 +15,36 @@ _log = logging.getLogger(__name__)
 
 def translate_ids(
     session: Session,
-    identifiers: list[str],
+    identifiers: list[str] | None,
     source_type: str,
     target_type: str,
     ncbi_tax_id: int,
 ) -> tuple[dict[str, set[str]], set[str]]:
     """Translate IDs via the database.
 
+    Args:
+        session: SQLAlchemy session.
+        identifiers: Source IDs to translate, or ``None`` for the full table.
+        source_type: Source ID type name.
+        target_type: Target ID type name.
+        ncbi_tax_id: NCBI Taxonomy ID.
+
     Returns:
         Tuple of (results dict, set of backend names used).
     """
     result = defaultdict(set)
     backends_used = set()
+
+    params: dict = {
+        'src_type': source_type,
+        'tgt_type': target_type,
+        'tax': ncbi_tax_id,
+    }
+
+    id_filter = ''
+    if identifiers is not None:
+        id_filter = 'AND m.source_id = ANY(:ids)'
+        params['ids'] = identifiers
 
     rows = session.execute(
         text(f"""
@@ -38,47 +56,42 @@ def translate_ids(
             WHERE st.name = :src_type
             AND tt.name = :tgt_type
             AND m.ncbi_tax_id = :tax
-            AND m.source_id = ANY(:ids)
+            {id_filter}
         """),
-        {
-            'src_type': source_type,
-            'tgt_type': target_type,
-            'tax': ncbi_tax_id,
-            'ids': identifiers,
-        },
+        params,
     )
 
     for row in rows:
         result[row[0]].add(row[1])
         backends_used.add(row[2])
 
-    # If no results, try the reverse direction
-    # (we may have target→source but not source→target)
-    missing = [i for i in identifiers if i not in result]
-    if missing:
-        rev_rows = session.execute(
-            text(f"""
-                SELECT m.target_id, m.source_id, b.name
-                FROM {SCHEMA}.id_mapping m
-                JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
-                JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
-                JOIN {SCHEMA}.backend b ON m.backend_id = b.id
-                WHERE st.name = :tgt_type
-                AND tt.name = :src_type
-                AND (m.ncbi_tax_id = :tax OR m.ncbi_tax_id = 0)
-                AND m.target_id = ANY(:ids)
-            """),
-            {
-                'src_type': source_type,
-                'tgt_type': target_type,
-                'tax': ncbi_tax_id,
-                'ids': missing,
-            },
-        )
+    # Reverse lookup only when querying specific identifiers
+    if identifiers is not None:
+        missing = [i for i in identifiers if i not in result]
+        if missing:
+            rev_rows = session.execute(
+                text(f"""
+                    SELECT m.target_id, m.source_id, b.name
+                    FROM {SCHEMA}.id_mapping m
+                    JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
+                    JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
+                    JOIN {SCHEMA}.backend b ON m.backend_id = b.id
+                    WHERE st.name = :tgt_type
+                    AND tt.name = :src_type
+                    AND (m.ncbi_tax_id = :tax OR m.ncbi_tax_id = 0)
+                    AND m.target_id = ANY(:ids)
+                """),
+                {
+                    'src_type': source_type,
+                    'tgt_type': target_type,
+                    'tax': ncbi_tax_id,
+                    'ids': missing,
+                },
+            )
 
-        for row in rev_rows:
-            result[row[0]].add(row[1])
-            backends_used.add(f'{row[2]}(rev)')
+            for row in rev_rows:
+                result[row[0]].add(row[1])
+                backends_used.add(f'{row[2]}(rev)')
 
     return dict(result), backends_used
 
@@ -90,29 +103,10 @@ def get_full_table(
     ncbi_tax_id: int,
 ) -> dict[str, set[str]]:
     """Get a full mapping table from the database."""
-    result = defaultdict(set)
 
-    rows = session.execute(
-        text(f"""
-            SELECT m.source_id, m.target_id
-            FROM {SCHEMA}.id_mapping m
-            JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
-            JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
-            WHERE st.name = :src_type
-            AND tt.name = :tgt_type
-            AND m.ncbi_tax_id = :tax
-        """),
-        {
-            'src_type': source_type,
-            'tgt_type': target_type,
-            'tax': ncbi_tax_id,
-        },
-    )
+    result, _ = translate_ids(session, None, source_type, target_type, ncbi_tax_id)
 
-    for row in rows:
-        result[row[0]].add(row[1])
-
-    return dict(result)
+    return result
 
 
 def identify_ids(
