@@ -52,6 +52,34 @@ def translate_ids(
         result[row[0]].add(row[1])
         backends_used.add(row[2])
 
+    # If no results, try the reverse direction
+    # (we may have target→source but not source→target)
+    missing = [i for i in identifiers if i not in result]
+    if missing:
+        rev_rows = session.execute(
+            text(f"""
+                SELECT m.target_id, m.source_id, b.name
+                FROM {SCHEMA}.id_mapping m
+                JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
+                JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
+                JOIN {SCHEMA}.backend b ON m.backend_id = b.id
+                WHERE st.name = :tgt_type
+                AND tt.name = :src_type
+                AND (m.ncbi_tax_id = :tax OR m.ncbi_tax_id = 0)
+                AND m.target_id = ANY(:ids)
+            """),
+            {
+                'src_type': source_type,
+                'tgt_type': target_type,
+                'tax': ncbi_tax_id,
+                'ids': missing,
+            },
+        )
+
+        for row in rev_rows:
+            result[row[0]].add(row[1])
+            backends_used.add(f'{row[2]}(rev)')
+
     return dict(result), backends_used
 
 
