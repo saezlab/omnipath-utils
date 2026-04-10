@@ -16,7 +16,7 @@ class OrthologyController(Controller):
         source: int = Parameter(default=9606, description='Source organism'),
         target: int = Parameter(default=10090, description='Target organism'),
         id_type: str = Parameter(default='genesymbol', description='ID type'),
-        resource: str = Parameter(
+        resource: str | None = Parameter(
             default=None, required=False, description='Force resource'
         ),
         min_sources: int = Parameter(
@@ -64,7 +64,7 @@ class OrthologyController(Controller):
         source: int = Parameter(default=9606),
         target: int = Parameter(default=10090),
         id_type: str = Parameter(default='genesymbol'),
-        resource: str = Parameter(default=None, required=False),
+        resource: str | None = Parameter(default=None, required=False),
     ) -> dict:
         """Get a full orthology table."""
 
