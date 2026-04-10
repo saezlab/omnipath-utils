@@ -1,0 +1,2526 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://saezlab.github.io/omnipath-utils/guide/mapping-advanced/">
+      
+      
+        <link rel="prev" href="../mapping/">
+      
+      
+        <link rel="next" href="../taxonomy/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Advanced Translation - omnipath-utils</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../assets/omnipath-theme.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#advanced-id-translation" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="omnipath-utils" class="md-header__button md-logo" aria-label="omnipath-utils" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4M4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4m0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            omnipath-utils
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Advanced Translation
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/saezlab/omnipath-utils" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    saezlab/omnipath-utils
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="omnipath-utils" class="md-nav__button md-logo" aria-label="omnipath-utils" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4M4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4m0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4"/></svg>
+
+    </a>
+    omnipath-utils
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/saezlab/omnipath-utils" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    saezlab/omnipath-utils
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mapping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ID Translation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Translation
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Translation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#controlling-translation-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Controlling translation behavior
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Controlling translation behavior">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#raw-mode-bypass-all-special-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Raw mode: bypass all special handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#explicit-backend-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Explicit backend selection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#querying-swissprot-trembl-and-synonyms-directly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Querying SwissProt, TrEMBL, and synonyms directly
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-translation-pipeline-in-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The translation pipeline in detail
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The translation pipeline in detail">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-by-step-walkthrough" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step-by-step walkthrough
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vectorization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vectorization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-mode-vs-database-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory mode vs Database mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rest-api-fallback-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REST API fallback chain
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="REST API fallback chain">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-rest-fallbacks-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How REST fallbacks work
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rest-query-parameters-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REST query parameters reference
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backend-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend details
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Backend details">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#auto-selection-algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-selection algorithm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backend-specific-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend-specific behavior
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Backend-specific behavior">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#uniprot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        uniprot
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uniprot_ftp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        uniprot_ftp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uploadlists" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        uploadlists
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#biomart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        biomart
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mirbase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mirbase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unichem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        unichem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ramp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ramp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hmdb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        hmdb
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writing-a-new-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a new backend
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#database-tables-for-special-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database tables for special cases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#caching-and-performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caching and performance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Caching and performance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#memory-mode-caching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory mode caching
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#database-mode-performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database mode performance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#translation-performance-tips" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Translation performance tips
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#identify-and-all-mappings-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Identify and All-Mappings endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Identify and All-Mappings endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-mappingidentify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /mapping/identify
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-mappingall" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /mapping/all
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python API
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../taxonomy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Taxonomy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reflists/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Lists
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Build
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#controlling-translation-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Controlling translation behavior
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Controlling translation behavior">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#raw-mode-bypass-all-special-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Raw mode: bypass all special handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#explicit-backend-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Explicit backend selection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#querying-swissprot-trembl-and-synonyms-directly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Querying SwissProt, TrEMBL, and synonyms directly
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-translation-pipeline-in-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The translation pipeline in detail
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The translation pipeline in detail">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-by-step-walkthrough" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step-by-step walkthrough
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vectorization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vectorization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-mode-vs-database-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory mode vs Database mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rest-api-fallback-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REST API fallback chain
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="REST API fallback chain">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-rest-fallbacks-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How REST fallbacks work
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rest-query-parameters-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REST query parameters reference
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backend-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend details
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Backend details">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#auto-selection-algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-selection algorithm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backend-specific-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend-specific behavior
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Backend-specific behavior">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#uniprot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        uniprot
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uniprot_ftp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        uniprot_ftp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uploadlists" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        uploadlists
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#biomart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        biomart
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mirbase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mirbase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unichem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        unichem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ramp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ramp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hmdb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        hmdb
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writing-a-new-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a new backend
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#database-tables-for-special-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database tables for special cases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#caching-and-performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caching and performance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Caching and performance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#memory-mode-caching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory mode caching
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#database-mode-performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database mode performance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#translation-performance-tips" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Translation performance tips
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#identify-and-all-mappings-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Identify and All-Mappings endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Identify and All-Mappings endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-mappingidentify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /mapping/identify
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-mappingall" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /mapping/all
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python API
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="advanced-id-translation">Advanced ID Translation<a class="headerlink" href="#advanced-id-translation" title="Permanent link">&para;</a></h1>
+<p>This page covers the internal workings of the translation system for
+power users and developers. For the basic API reference, see
+<a href="../mapping/">ID Translation</a>.</p>
+<h2 id="controlling-translation-behavior">Controlling translation behavior<a class="headerlink" href="#controlling-translation-behavior" title="Permanent link">&para;</a></h2>
+<h3 id="raw-mode-bypass-all-special-handling">Raw mode: bypass all special handling<a class="headerlink" href="#raw-mode-bypass-all-special-handling" title="Permanent link">&para;</a></h3>
+<p>Every translation function accepts <code>raw=True</code>. In raw mode, the
+translator performs a single direct table lookup -- no case fallbacks,
+no chain translation, no UniProt cleanup. This is useful when you need
+maximum speed and know your identifiers are already in the exact form
+stored in the mapping table.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:3"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Python</label><label for="__tabbed_1_2">REST API</label><label for="__tabbed_1_3">DataFrame</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">map_name</span><span class="p">,</span> <span class="n">translate</span>
+
+<span class="c1"># Raw: exact match only</span>
+<span class="n">map_name</span><span class="p">(</span><span class="s1">&#39;TP53&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">,</span> <span class="n">raw</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="c1"># {&#39;P04637&#39;}</span>
+
+<span class="n">map_name</span><span class="p">(</span><span class="s1">&#39;tp53&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">,</span> <span class="n">raw</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="c1"># set()  -- lowercase, no fallback</span>
+
+<span class="c1"># Batch raw translation</span>
+<span class="n">translate</span><span class="p">(</span>
+    <span class="p">[</span><span class="s1">&#39;TP53&#39;</span><span class="p">,</span> <span class="s1">&#39;EGFR&#39;</span><span class="p">,</span> <span class="s1">&#39;tp53&#39;</span><span class="p">],</span>
+    <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">,</span>
+    <span class="n">raw</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="c1"># {&#39;TP53&#39;: {&#39;P04637&#39;}, &#39;EGFR&#39;: {&#39;P00533&#39;}, &#39;tp53&#39;: set()}</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;https://omnipathdb.org/mapping/translate?\</span>
+<span class="s2">identifiers=TP53,tp53&amp;\</span>
+<span class="s2">id_type=genesymbol&amp;\</span>
+<span class="s2">target_id_type=uniprot&amp;\</span>
+<span class="s2">raw=true&quot;</span>
+</code></pre></div>
+<p>The response <code>meta</code> object includes <code>"raw": true</code> to confirm the
+parameter was applied.</p>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">translate_column</span>
+
+<span class="n">result</span> <span class="o">=</span> <span class="n">translate_column</span><span class="p">(</span>
+    <span class="n">df</span><span class="p">,</span> <span class="s1">&#39;gene&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">,</span>
+    <span class="n">raw</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<p>What raw mode skips:</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Normal mode</th>
+<th>Raw mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gene symbol case fallbacks (UPPER, Capitalize)</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Gene symbol synonym lookup</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Chain translation (source -&gt; uniprot -&gt; target)</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>UniProt cleanup (secondary -&gt; primary, TrEMBL -&gt; SwissProt)</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>RefSeq version stripping</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Ensembl version stripping</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>miRNA reciprocal fallback</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>CURIE prefix stripping</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Reverse table scan</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<h3 id="explicit-backend-selection">Explicit backend selection<a class="headerlink" href="#explicit-backend-selection" title="Permanent link">&para;</a></h3>
+<p>By default, the mapper auto-selects a backend based on which data
+sources support the requested ID type pair. You can force a specific
+backend with the <code>backend=</code> parameter.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">Python</label><label for="__tabbed_2_2">REST API</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">map_name</span><span class="p">,</span> <span class="n">translate</span>
+
+<span class="c1"># Force BioMart for Ensembl-centric lookups</span>
+<span class="n">map_name</span><span class="p">(</span><span class="s1">&#39;TP53&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;ensg&#39;</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="s1">&#39;biomart&#39;</span><span class="p">)</span>
+
+<span class="c1"># Force UniProt REST for protein IDs</span>
+<span class="n">translate</span><span class="p">(</span>
+    <span class="p">[</span><span class="s1">&#39;P04637&#39;</span><span class="p">,</span> <span class="s1">&#39;P00533&#39;</span><span class="p">],</span>
+    <span class="s1">&#39;uniprot&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span>
+    <span class="n">backend</span><span class="o">=</span><span class="s1">&#39;uniprot&#39;</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;https://omnipathdb.org/mapping/translate?\</span>
+<span class="s2">identifiers=TP53&amp;\</span>
+<span class="s2">id_type=genesymbol&amp;\</span>
+<span class="s2">target_id_type=uniprot&amp;\</span>
+<span class="s2">backend=biomart&quot;</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The REST API uses the database backend for lookups. The <code>backend</code>
+parameter is recorded in the response metadata but does not
+change the query behavior in database mode. It is primarily
+meaningful for the Python API.</p>
+</div>
+</div>
+</div>
+</div>
+<p>Available backends:</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Data source</th>
+<th>When to force it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>uniprot</code></td>
+<td>UniProt REST API</td>
+<td>Default for protein IDs; most comprehensive protein cross-refs</td>
+</tr>
+<tr>
+<td><code>uniprot_ftp</code></td>
+<td>UniProt FTP idmapping files</td>
+<td>Bulk download; faster for large-scale builds</td>
+</tr>
+<tr>
+<td><code>uploadlists</code></td>
+<td>UniProt ID Mapping batch service</td>
+<td>Specific, targeted ID sets</td>
+</tr>
+<tr>
+<td><code>biomart</code></td>
+<td>Ensembl BioMart</td>
+<td>When you need fresh Ensembl data or Ensembl-specific ID types</td>
+</tr>
+<tr>
+<td><code>mirbase</code></td>
+<td>miRBase</td>
+<td>miRNA names and accessions</td>
+</tr>
+<tr>
+<td><code>unichem</code></td>
+<td>UniChem (EMBL-EBI)</td>
+<td>Chemical compound cross-references</td>
+</tr>
+<tr>
+<td><code>ramp</code></td>
+<td>RaMP-DB</td>
+<td>Metabolite cross-references and synonym mappings</td>
+</tr>
+<tr>
+<td><code>hmdb</code></td>
+<td>HMDB</td>
+<td>HMDB-centric metabolite mappings</td>
+</tr>
+</tbody>
+</table>
+<p>When <code>backend=</code> is specified, the mapper skips its cached table and
+forces a reload from the requested backend. This is useful when the
+auto-selected backend returned incomplete data and you want to try a
+different source.</p>
+<h3 id="querying-swissprot-trembl-and-synonyms-directly">Querying SwissProt, TrEMBL, and synonyms directly<a class="headerlink" href="#querying-swissprot-trembl-and-synonyms-directly" title="Permanent link">&para;</a></h3>
+<p>The <code>uniprot</code> target type runs the full cleanup pipeline (secondary AC
+resolution, TrEMBL-to-SwissProt preference, proteome filtering, format
+validation). To bypass this and query specific subsets of UniProt, use
+the dedicated target types:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">map_name</span>
+
+<span class="c1"># Default: prefers SwissProt, runs full cleanup</span>
+<span class="n">map_name</span><span class="p">(</span><span class="s1">&#39;TP53&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">)</span>
+<span class="c1"># {&#39;P04637&#39;}  -- SwissProt entry</span>
+
+<span class="c1"># Only reviewed (SwissProt) entries, no cleanup</span>
+<span class="n">map_name</span><span class="p">(</span><span class="s1">&#39;TP53&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;swissprot&#39;</span><span class="p">)</span>
+<span class="c1"># {&#39;P04637&#39;}</span>
+
+<span class="c1"># Only unreviewed (TrEMBL) entries, no cleanup</span>
+<span class="n">map_name</span><span class="p">(</span><span class="s1">&#39;TP53&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;trembl&#39;</span><span class="p">)</span>
+<span class="c1"># TrEMBL entries for TP53, if any exist</span>
+
+<span class="c1"># Gene symbol synonyms</span>
+<span class="n">map_name</span><span class="p">(</span><span class="s1">&#39;p53&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol-syn&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">)</span>
+<span class="c1"># Looks up &#39;p53&#39; as a synonym; may find TP53&#39;s UniProt AC</span>
+</code></pre></div>
+<p>Target type behavior:</p>
+<table>
+<thead>
+<tr>
+<th>Target type</th>
+<th>Source data</th>
+<th>Cleanup pipeline</th>
+<th>Typical use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>uniprot</code></td>
+<td>SwissProt + TrEMBL</td>
+<td>Yes (full 4-step)</td>
+<td>Default; production use</td>
+</tr>
+<tr>
+<td><code>swissprot</code></td>
+<td>SwissProt only</td>
+<td>No</td>
+<td>When you specifically need reviewed entries</td>
+</tr>
+<tr>
+<td><code>trembl</code></td>
+<td>TrEMBL only</td>
+<td>No</td>
+<td>When you need unreviewed entries</td>
+</tr>
+<tr>
+<td><code>genesymbol-syn</code></td>
+<td>Gene symbol synonym table</td>
+<td>No (source type)</td>
+<td>Looking up old/alternative gene names</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-translation-pipeline-in-detail">The translation pipeline in detail<a class="headerlink" href="#the-translation-pipeline-in-detail" title="Permanent link">&para;</a></h2>
+<h3 id="step-by-step-walkthrough">Step-by-step walkthrough<a class="headerlink" href="#step-by-step-walkthrough" title="Permanent link">&para;</a></h3>
+<p>Here is what happens when you call:</p>
+<div class="highlight"><pre><span></span><code><span class="n">map_name</span><span class="p">(</span><span class="s1">&#39;tp53&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Step 1: Alias resolution.</strong>
+<code>IdTypeRegistry.resolve()</code> normalizes the type names. <code>'genesymbol'</code>
+is already canonical. Variants like <code>'GeneSymbol'</code>, <code>'gene_symbol'</code>,
+or <code>'genesymbol_syn'</code> would be resolved to their canonical forms.</p>
+<p><strong>Step 2: Direct lookup.</strong>
+The mapper looks up <code>'tp53'</code> in the <code>genesymbol -&gt; uniprot</code> table.
+Tables are case-sensitive, so <code>'tp53'</code> is not found (the table has
+<code>'TP53'</code>). Result: miss.</p>
+<p><strong>Step 3: Gene symbol fallbacks.</strong>
+Since <code>id_type</code> is <code>'genesymbol'</code>, the fallback chain runs:</p>
+<ul>
+<li><code>'tp53'.upper()</code> = <code>'TP53'</code> -- lookup finds <code>{'P04637', 'A0A024R1R8', ...}</code>.
+  Match found; remaining fallbacks are skipped.</li>
+</ul>
+<p>If UPPER had failed, the system would try:</p>
+<ul>
+<li><code>'tp53'.capitalize()</code> = <code>'Tp53'</code> (for rodent symbols)</li>
+<li>Synonym table lookup for <code>'tp53'</code> and <code>'TP53'</code></li>
+<li>Append "1": <code>'tp531'</code> (non-strict mode only)</li>
+</ul>
+<p><strong>Step 4: UniProt cleanup.</strong>
+Since the target is <code>'uniprot'</code>, the cleanup pipeline runs on the
+raw result set <code>{'P04637', 'A0A024R1R8', ...}</code>:</p>
+<ol>
+<li>
+<p><strong>Secondary -&gt; primary:</strong> Each AC is checked against the
+   <code>uniprot-sec -&gt; uniprot-pri</code> table. If it is a secondary AC,
+   it is replaced with the current primary AC.</p>
+</li>
+<li>
+<p><strong>TrEMBL -&gt; SwissProt:</strong> <code>A0A024R1R8</code> is not in the SwissProt
+   reference list. The pipeline looks up its gene symbol via the
+   <code>trembl -&gt; genesymbol</code> table, gets <code>'TP53'</code>, then finds the
+   SwissProt entry for <code>'TP53'</code>: <code>'P04637'</code>. The TrEMBL AC is replaced.</p>
+</li>
+<li>
+<p><strong>Proteome filter:</strong> The result set is intersected with the human
+   proteome reference list. <code>P04637</code> is present; stale or cross-organism
+   ACs are removed.</p>
+</li>
+<li>
+<p><strong>Format validation:</strong> Each AC is checked against the UniProt AC
+   regex. Invalid strings are discarded.</p>
+</li>
+</ol>
+<p><strong>Step 5: Result.</strong>
+<code>{'P04637'}</code> -- just the SwissProt entry.</p>
+<h3 id="vectorization">Vectorization<a class="headerlink" href="#vectorization" title="Permanent link">&para;</a></h3>
+<p>The <code>translate()</code> and <code>translate_column()</code> functions use
+<code>translate_core()</code> internally, which implements a two-pass strategy:</p>
+<ol>
+<li>
+<p><strong>First pass (batch):</strong> All identifiers are looked up in the
+   mapping table in a single sweep. This is an O(1) dict lookup per ID.
+   Identifiers that get a direct hit are collected immediately.</p>
+</li>
+<li>
+<p><strong>Second pass (per-ID fallback):</strong> Only identifiers that missed
+   in the first pass go through the full <code>map_name()</code> pipeline with
+   all its fallback strategies.</p>
+</li>
+</ol>
+<p>This means: if your mapping table covers 99% of your identifiers,
+only 1% go through the slower per-ID fallback path. For typical gene
+symbol-to-UniProt translations with properly cased input, the first
+pass handles nearly everything.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Efficient: translate_core handles the batch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">translate</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">translate</span><span class="p">(</span><span class="n">gene_list</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">)</span>
+
+<span class="c1"># Less efficient: each call goes through the full pipeline</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">map_name</span>
+<span class="n">result</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">map_name</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">gene_list</span><span class="p">}</span>
+</code></pre></div>
+<p>When the target type is <code>uniprot</code>, cleanup runs on the batch results
+from the first pass as well (not just the fallback results), ensuring
+consistent output regardless of which pass produced the hit.</p>
+<h3 id="memory-mode-vs-database-mode">Memory mode vs Database mode<a class="headerlink" href="#memory-mode-vs-database-mode" title="Permanent link">&para;</a></h3>
+<p>The Python API uses <strong>memory mode</strong>: mapping tables are downloaded from
+upstream APIs (UniProt, BioMart, etc.), stored as <code>dict[str, set[str]]</code>
+in memory, and cached as pickle files on disk. This is fast for
+interactive use and small to medium batch jobs.</p>
+<p>The REST API uses <strong>database mode</strong>: mapping tables are pre-loaded into
+PostgreSQL during a build step. Translation queries run as SQL queries
+against indexed tables. This handles concurrent requests and very large
+ID sets efficiently.</p>
+<p>Both modes share the same fallback logic and cleanup pipeline.
+The difference is the data access layer:</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Memory mode</th>
+<th>Database mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data loading</td>
+<td>On-demand from upstream APIs</td>
+<td>Pre-built into PostgreSQL</td>
+</tr>
+<tr>
+<td>Lookup</td>
+<td>Python dict (O(1))</td>
+<td>SQL query (indexed)</td>
+</tr>
+<tr>
+<td>Fallbacks</td>
+<td><code>map_name()</code> per-ID pipeline</td>
+<td>Batch SQL queries per fallback step</td>
+</tr>
+<tr>
+<td>Cleanup</td>
+<td>Same pipeline</td>
+<td>Same pipeline</td>
+</tr>
+<tr>
+<td>Caching</td>
+<td>Pickle files, 5-min memory expiry</td>
+<td>Database is the cache</td>
+</tr>
+<tr>
+<td>Concurrency</td>
+<td>Single-process</td>
+<td>Multi-process via connection pool</td>
+</tr>
+</tbody>
+</table>
+<h2 id="rest-api-fallback-chain">REST API fallback chain<a class="headerlink" href="#rest-api-fallback-chain" title="Permanent link">&para;</a></h2>
+<p>The REST API implements the same fallback strategies as the Python API,
+but uses batch SQL queries instead of per-ID lookups.</p>
+<h3 id="how-rest-fallbacks-work">How REST fallbacks work<a class="headerlink" href="#how-rest-fallbacks-work" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p><strong>Direct DB query:</strong> All input IDs are looked up in a single SQL
+   query against the <code>id_mapping</code> table.</p>
+</li>
+<li>
+<p><strong>Gene symbol fallbacks (batch):</strong> For unmapped IDs where the source
+   type is <code>genesymbol</code>:</p>
+<ul>
+<li>Uppercase batch: all unmapped IDs are uppercased and queried</li>
+<li>Capitalize batch: remaining unmapped IDs are capitalized and queried</li>
+<li>Synonym batch: remaining unmapped IDs are queried against
+  <code>genesymbol-syn</code></li>
+<li>Uppercase synonym batch: remaining unmapped IDs uppercased and
+  queried against <code>genesymbol-syn</code></li>
+</ul>
+</li>
+<li>
+<p><strong>Chain translation (batch):</strong> For unmapped IDs where neither side
+   is <code>uniprot</code>: a batch intermediate query (<code>source -&gt; uniprot</code>),
+   then a batch final query (<code>uniprot -&gt; target</code>).</p>
+</li>
+<li>
+<p><strong>UniProt cleanup:</strong> Same pipeline as the Python API (secondary -&gt;
+   primary, TrEMBL -&gt; SwissProt, proteome filter, format validation).</p>
+</li>
+</ol>
+<p>When <code>raw=true</code> is passed, steps 2-4 are skipped entirely.</p>
+<h3 id="rest-query-parameters-reference">REST query parameters reference<a class="headerlink" href="#rest-query-parameters-reference" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>identifiers</code></td>
+<td>string</td>
+<td>required</td>
+<td>Comma-separated IDs (GET) or JSON list (POST)</td>
+</tr>
+<tr>
+<td><code>id_type</code></td>
+<td>string</td>
+<td>required</td>
+<td>Source ID type</td>
+</tr>
+<tr>
+<td><code>target_id_type</code></td>
+<td>string</td>
+<td>required</td>
+<td>Target ID type</td>
+</tr>
+<tr>
+<td><code>ncbi_tax_id</code></td>
+<td>int</td>
+<td>9606</td>
+<td>Organism NCBI Taxonomy ID</td>
+</tr>
+<tr>
+<td><code>raw</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Skip all special-case handling</td>
+</tr>
+<tr>
+<td><code>backend</code></td>
+<td>string</td>
+<td>null</td>
+<td>Force specific backend (metadata only in DB mode)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>GET examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Basic translation</span>
+curl<span class="w"> </span><span class="s2">&quot;https://omnipathdb.org/mapping/translate?\</span>
+<span class="s2">identifiers=TP53,EGFR&amp;\</span>
+<span class="s2">id_type=genesymbol&amp;\</span>
+<span class="s2">target_id_type=uniprot&quot;</span>
+
+<span class="c1"># Raw mode -- direct lookup only</span>
+curl<span class="w"> </span><span class="s2">&quot;https://omnipathdb.org/mapping/translate?\</span>
+<span class="s2">identifiers=TP53&amp;\</span>
+<span class="s2">id_type=genesymbol&amp;\</span>
+<span class="s2">target_id_type=uniprot&amp;\</span>
+<span class="s2">raw=true&quot;</span>
+
+<span class="c1"># Specify organism (mouse)</span>
+curl<span class="w"> </span><span class="s2">&quot;https://omnipathdb.org/mapping/translate?\</span>
+<span class="s2">identifiers=Trp53&amp;\</span>
+<span class="s2">id_type=genesymbol&amp;\</span>
+<span class="s2">target_id_type=uniprot&amp;\</span>
+<span class="s2">ncbi_tax_id=10090&quot;</span>
+</code></pre></div>
+<p><strong>POST example:</strong></p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;https://omnipathdb.org/mapping/translate&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">       &quot;identifiers&quot;: [&quot;TP53&quot;, &quot;EGFR&quot;, &quot;BRCA1&quot;],</span>
+<span class="s1">       &quot;id_type&quot;: &quot;genesymbol&quot;,</span>
+<span class="s1">       &quot;target_id_type&quot;: &quot;uniprot&quot;,</span>
+<span class="s1">       &quot;raw&quot;: false,</span>
+<span class="s1">       &quot;backend&quot;: null</span>
+<span class="s1">     }&#39;</span>
+</code></pre></div>
+<h2 id="backend-details">Backend details<a class="headerlink" href="#backend-details" title="Permanent link">&para;</a></h2>
+<h3 id="auto-selection-algorithm">Auto-selection algorithm<a class="headerlink" href="#auto-selection-algorithm" title="Permanent link">&para;</a></h3>
+<p>When no backend is specified, the mapper's <code>_find_backends()</code> method
+builds a candidate list:</p>
+<ol>
+<li>
+<p><strong>Column-based backends</strong> (<code>uniprot</code>, <code>uniprot_ftp</code>, <code>biomart</code>):
+   For each backend, it checks whether both the source and target ID
+   types have a column defined in <code>id_types.yaml</code> under that backend's
+   key. If both columns exist, the backend is added to the candidate list.</p>
+</li>
+<li>
+<p><strong>Custom backends</strong> (<code>mirbase</code>, <code>unichem</code>, <code>ramp</code>, <code>hmdb</code>): These
+   are always appended to the candidate list. They perform their own
+   internal support check in their <code>read()</code> method and return an empty
+   dict if the ID type pair is not supported.</p>
+</li>
+</ol>
+<p>The mapper tries each candidate in order. The first backend that
+returns non-empty data wins.</p>
+<h3 id="backend-specific-behavior">Backend-specific behavior<a class="headerlink" href="#backend-specific-behavior" title="Permanent link">&para;</a></h3>
+<h4 id="uniprot">uniprot<a class="headerlink" href="#uniprot" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Data:</strong> UniProt AC, gene symbols, Entrez, HGNC, RefSeq, PDB, and
+  all cross-references stored in UniProt entries.</li>
+<li><strong>Access:</strong> <code>pypath.inputs.uniprot</code> (preferred) or direct HTTP to the
+  UniProt REST API.</li>
+<li><strong>Organism-specific:</strong> Yes. Queries are filtered by NCBI taxonomy ID.</li>
+<li><strong>Caching:</strong> Pickle file per <code>(source, target, organism)</code> triple.</li>
+<li><strong>When to force:</strong> Default for most protein-related translations.</li>
+</ul>
+<h4 id="uniprot_ftp">uniprot_ftp<a class="headerlink" href="#uniprot_ftp" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Data:</strong> Same scope as <code>uniprot</code>, but downloaded from UniProt FTP
+  idmapping files (bulk, pre-computed).</li>
+<li><strong>Access:</strong> <code>pypath.inputs.uniprot_ftp</code> or direct HTTP to UniProt FTP.</li>
+<li><strong>Organism-specific:</strong> Yes, but only 12 model organisms have
+  pre-computed files.</li>
+<li><strong>Caching:</strong> Same as <code>uniprot</code>.</li>
+<li><strong>When to force:</strong> Faster for full-proteome builds; useful when the
+  REST API is slow or rate-limited.</li>
+</ul>
+<h4 id="uploadlists">uploadlists<a class="headerlink" href="#uploadlists" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Data:</strong> Same scope as UniProt REST.</li>
+<li><strong>Access:</strong> Direct HTTP to the UniProt ID Mapping batch service
+  (submit job, poll, collect results).</li>
+<li><strong>Organism-specific:</strong> Yes.</li>
+<li><strong>When to force:</strong> When you have a specific, bounded set of IDs and
+  want the most up-to-date cross-references.</li>
+</ul>
+<h4 id="biomart">biomart<a class="headerlink" href="#biomart" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Data:</strong> Ensembl gene/transcript/protein IDs, gene symbols, Entrez.</li>
+<li><strong>Access:</strong> <code>pypath.inputs.biomart</code> or direct HTTP to the Ensembl
+  BioMart XML service.</li>
+<li><strong>Organism-specific:</strong> Yes.</li>
+<li><strong>Caching:</strong> Pickle file per triple.</li>
+<li><strong>When to force:</strong> When translating Ensembl IDs or when you need
+  fresh Ensembl-specific data.</li>
+</ul>
+<h4 id="mirbase">mirbase<a class="headerlink" href="#mirbase" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Data:</strong> Precursor names (<code>mir-pre</code>), mature names (<code>mir-mat-name</code>),
+  miRBase accessions (<code>mirbase</code>).</li>
+<li><strong>Access:</strong> <code>pypath.inputs.mirbase</code> (requires pypath).</li>
+<li><strong>Organism-specific:</strong> Yes.</li>
+<li><strong>When to force:</strong> miRNA translations.</li>
+</ul>
+<h4 id="unichem">unichem<a class="headerlink" href="#unichem" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Data:</strong> Cross-references between chemical databases (ChEMBL, ChEBI,
+  DrugBank, PubChem, KEGG, etc.).</li>
+<li><strong>Access:</strong> <code>pypath.inputs.unichem</code> (requires pypath).</li>
+<li><strong>Organism-specific:</strong> No (chemicals are universal).</li>
+<li><strong>When to force:</strong> Chemical compound ID translation.</li>
+</ul>
+<h4 id="ramp">ramp<a class="headerlink" href="#ramp" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Data:</strong> Metabolite cross-references and synonym mappings from
+  RaMP-DB.</li>
+<li><strong>Access:</strong> <code>pypath.inputs.ramp</code> (requires pypath).</li>
+<li><strong>Organism-specific:</strong> No.</li>
+<li><strong>When to force:</strong> Metabolite ID translation, especially when you
+  need common-name-to-database-ID resolution.</li>
+</ul>
+<h4 id="hmdb">hmdb<a class="headerlink" href="#hmdb" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Data:</strong> HMDB, PubChem, ChEBI, DrugBank, KEGG compound.</li>
+<li><strong>Access:</strong> <code>pypath.inputs.hmdb</code> (requires pypath).</li>
+<li><strong>Organism-specific:</strong> Human-derived data, but identifiers are universal.</li>
+<li><strong>When to force:</strong> HMDB-centric metabolite lookups.</li>
+</ul>
+<h3 id="writing-a-new-backend">Writing a new backend<a class="headerlink" href="#writing-a-new-backend" title="Permanent link">&para;</a></h3>
+<p>To add a new data source:</p>
+<ol>
+<li>
+<p>Create a module in <code>omnipath_utils/mapping/backends/</code> (e.g.
+   <code>_mybackend.py</code>).</p>
+</li>
+<li>
+<p>Subclass <code>MappingBackend</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping.backends._base</span><span class="w"> </span><span class="kn">import</span> <span class="n">MappingBackend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping.backends</span><span class="w"> </span><span class="kn">import</span> <span class="n">register</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyBackend</span><span class="p">(</span><span class="n">MappingBackend</span><span class="p">):</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;mybackend&quot;</span>
+    <span class="n">yaml_key</span> <span class="o">=</span> <span class="s2">&quot;mybackend&quot;</span>  <span class="c1"># key in id_types.yaml</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_read_via_pypath</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">id_type</span><span class="p">,</span> <span class="n">target_id_type</span><span class="p">,</span> <span class="n">ncbi_tax_id</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span> <span class="n">src_col</span><span class="p">,</span> <span class="n">tgt_col</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">pypath.inputs.mybackend</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">mymod</span>
+        <span class="c1"># ... fetch and return dict[str, set[str]]</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span>  <span class="c1"># if pypath not available</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_read_direct</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">id_type</span><span class="p">,</span> <span class="n">target_id_type</span><span class="p">,</span> <span class="n">ncbi_tax_id</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span> <span class="n">src_col</span><span class="p">,</span> <span class="n">tgt_col</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="c1"># Direct HTTP implementation</span>
+        <span class="c1"># Return dict[str, set[str]]</span>
+        <span class="k">return</span> <span class="p">{}</span>
+
+<span class="n">register</span><span class="p">(</span><span class="s2">&quot;mybackend&quot;</span><span class="p">,</span> <span class="n">MyBackend</span><span class="p">)</span>
+</code></pre></div>
+</li>
+<li>
+<p>Add column definitions to <code>id_types.yaml</code> under the <code>mybackend</code> key
+   for each supported ID type.</p>
+</li>
+<li>
+<p>The backend will be automatically discovered by <code>_find_backends()</code>
+   if it is a column-based backend, or by the custom backends list if
+   you add it to <code>_CUSTOM_BACKENDS</code> in <code>Mapper</code>.</p>
+</li>
+</ol>
+<h2 id="database-tables-for-special-cases">Database tables for special cases<a class="headerlink" href="#database-tables-for-special-cases" title="Permanent link">&para;</a></h2>
+<p>During a database build, several auxiliary tables are created beyond
+the main <code>id_mapping</code> table:</p>
+<table>
+<thead>
+<tr>
+<th>Table content</th>
+<th>Source -&gt; Target</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gene symbol -&gt; SwissProt</td>
+<td><code>genesymbol -&gt; swissprot</code></td>
+<td>TrEMBL-to-SwissProt cleanup step</td>
+</tr>
+<tr>
+<td>TrEMBL -&gt; gene symbol</td>
+<td><code>trembl -&gt; genesymbol</code></td>
+<td>Reverse lookup in TrEMBL-to-SwissProt cleanup</td>
+</tr>
+<tr>
+<td>Gene symbol synonyms -&gt; UniProt</td>
+<td><code>genesymbol-syn -&gt; uniprot</code></td>
+<td>Synonym fallback</td>
+</tr>
+<tr>
+<td>SwissProt reference list</td>
+<td>reflist</td>
+<td>Proteome membership check (SwissProt)</td>
+</tr>
+<tr>
+<td>TrEMBL reference list</td>
+<td>reflist</td>
+<td>Proteome membership check (TrEMBL)</td>
+</tr>
+<tr>
+<td>HGNC IDs</td>
+<td><code>hgnc -&gt; uniprot</code></td>
+<td>Additional protein ID coverage</td>
+</tr>
+<tr>
+<td>RefSeq protein IDs</td>
+<td><code>refseqp -&gt; uniprot</code></td>
+<td>Additional protein ID coverage</td>
+</tr>
+<tr>
+<td>Secondary -&gt; primary UniProt</td>
+<td><code>uniprot-sec -&gt; uniprot-pri</code></td>
+<td>Obsolete AC resolution</td>
+</tr>
+</tbody>
+</table>
+<p>These tables enable the cleanup pipeline and fallback strategies to run
+entirely within the database, without loading data into memory.</p>
+<h2 id="caching-and-performance">Caching and performance<a class="headerlink" href="#caching-and-performance" title="Permanent link">&para;</a></h2>
+<h3 id="memory-mode-caching">Memory mode caching<a class="headerlink" href="#memory-mode-caching" title="Permanent link">&para;</a></h3>
+<p>Mapping tables are cached as pickle files in
+<code>~/.cache/omnipath_utils/mapping/</code>. Each unique combination of
+<code>(id_type, target_id_type, ncbi_tax_id, backend)</code> produces a
+deterministic filename via MD5 hash:</p>
+<div class="highlight"><pre><span></span><code>mapping_genesymbol__uniprot__9606__a1b2c3d4e5f6.pickle
+</code></pre></div>
+<p>In-memory tables auto-expire after 5 minutes (300 seconds) of
+inactivity. The <code>lifetime</code> parameter on the <code>Mapper</code> constructor
+controls this. Expired tables are removed on the next
+<code>remove_expired()</code> call.</p>
+<p>To clear the cache:</p>
+<div class="highlight"><pre><span></span><code>rm<span class="w"> </span>-rf<span class="w"> </span>~/.cache/omnipath_utils/mapping/
+</code></pre></div>
+<p>To change the cache directory:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping._mapper</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapper</span>
+<span class="n">mapper</span> <span class="o">=</span> <span class="n">Mapper</span><span class="p">(</span><span class="n">cachedir</span><span class="o">=</span><span class="s1">&#39;/custom/cache/path&#39;</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="database-mode-performance">Database mode performance<a class="headerlink" href="#database-mode-performance" title="Permanent link">&para;</a></h3>
+<p>The database schema uses indexes on <code>(source_type_id, target_type_id,
+ncbi_tax_id, source_id)</code> for fast lookups. The <code>COPY</code> command is used
+during builds for fast bulk inserts. Partitioning by organism is
+available for very large deployments.</p>
+<h3 id="translation-performance-tips">Translation performance tips<a class="headerlink" href="#translation-performance-tips" title="Permanent link">&para;</a></h3>
+<p><strong>Use batch functions for multiple IDs.</strong> <code>translate()</code> and
+<code>translate_column()</code> use <code>translate_core()</code> which performs a vectorized
+first pass. Calling <code>map_name()</code> in a loop forces every ID through the
+full fallback pipeline.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Good: vectorized first pass, fallback only for misses</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">translate</span><span class="p">(</span><span class="n">gene_list</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">)</span>
+
+<span class="c1"># Bad: every ID goes through full pipeline</span>
+<span class="n">result</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">map_name</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">gene_list</span><span class="p">}</span>
+</code></pre></div>
+<p><strong>Use <code>raw=True</code> when you do not need fallbacks.</strong> If your identifiers
+are already in canonical form (e.g. uppercase gene symbols, primary
+UniProt ACs), raw mode avoids all overhead:</p>
+<div class="highlight"><pre><span></span><code><span class="n">result</span> <span class="o">=</span> <span class="n">translate</span><span class="p">(</span><span class="n">clean_gene_list</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">,</span> <span class="n">raw</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Pre-fetch the translation table for repeated lookups.</strong> If you are
+translating IDs across multiple DataFrames or in a loop, fetch the
+table once and reuse it:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">translation_table</span>
+
+<span class="n">table</span> <span class="o">=</span> <span class="n">translation_table</span><span class="p">(</span><span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">)</span>
+<span class="c1"># Use table directly as a dict</span>
+<span class="k">for</span> <span class="n">gene</span> <span class="ow">in</span> <span class="n">genes</span><span class="p">:</span>
+    <span class="n">uniprots</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">gene</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span>
+</code></pre></div>
+<p><strong>For DataFrames, use <code>translate_column()</code>.</strong> It handles deduplication,
+batch lookup, and optional row expansion in a single call:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">translate_column</span>
+
+<span class="n">df</span> <span class="o">=</span> <span class="n">translate_column</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s1">&#39;gene&#39;</span><span class="p">,</span> <span class="s1">&#39;genesymbol&#39;</span><span class="p">,</span> <span class="s1">&#39;uniprot&#39;</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="identify-and-all-mappings-endpoints">Identify and All-Mappings endpoints<a class="headerlink" href="#identify-and-all-mappings-endpoints" title="Permanent link">&para;</a></h2>
+<h3 id="get-mappingidentify">GET /mapping/identify<a class="headerlink" href="#get-mappingidentify" title="Permanent link">&para;</a></h3>
+<p>Given one or more identifiers, search all mapping tables to find which
+ID types contain them. Useful when the type of an identifier is unknown.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>identifiers</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Comma-separated identifiers</td>
+</tr>
+<tr>
+<td><code>ncbi_tax_id</code></td>
+<td>int</td>
+<td>no</td>
+<td>NCBI Taxonomy ID (default: 9606)</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;https://omnipathdb.org/mapping/identify?\</span>
+<span class="s2">identifiers=P04637,HMDB0000001&quot;</span>
+</code></pre></div>
+<p><strong>Response:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;results&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;P04637&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="p">{</span><span class="nt">&quot;id_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uniprot&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;source&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;mappings_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">},</span>
+<span class="w">            </span><span class="p">{</span><span class="nt">&quot;id_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uniprot&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;target&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;mappings_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">}</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="nt">&quot;HMDB0000001&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="p">{</span><span class="nt">&quot;id_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;hmdb&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;source&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;mappings_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">}</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;meta&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;ncbi_tax_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">9606</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;total_input&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Each match includes:</p>
+<ul>
+<li><strong>id_type</strong> -- the canonical ID type name where the identifier was found.</li>
+<li><strong>role</strong> -- <code>"source"</code> or <code>"target"</code>, indicating whether the identifier
+  appears as a source or target in mapping rows.</li>
+<li><strong>mappings_count</strong> -- the number of distinct mapped partners.</li>
+</ul>
+<h3 id="get-mappingall">GET /mapping/all<a class="headerlink" href="#get-mappingall" title="Permanent link">&para;</a></h3>
+<p>Given identifiers and their type, return all known mappings to every
+other target type in a single request.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>identifiers</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Comma-separated identifiers</td>
+</tr>
+<tr>
+<td><code>id_type</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Source ID type</td>
+</tr>
+<tr>
+<td><code>ncbi_tax_id</code></td>
+<td>int</td>
+<td>no</td>
+<td>NCBI Taxonomy ID (default: 9606)</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;https://omnipathdb.org/mapping/all?\</span>
+<span class="s2">identifiers=P04637&amp;\</span>
+<span class="s2">id_type=uniprot&quot;</span>
+</code></pre></div>
+<p><strong>Response:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;results&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;P04637&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">&quot;genesymbol&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;TP53&quot;</span><span class="p">],</span>
+<span class="w">            </span><span class="nt">&quot;entrez&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;7157&quot;</span><span class="p">],</span>
+<span class="w">            </span><span class="nt">&quot;ensg&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;ENSG00000141510&quot;</span><span class="p">],</span>
+<span class="w">            </span><span class="nt">&quot;hgnc&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;11998&quot;</span><span class="p">]</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;meta&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;id_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uniprot&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;ncbi_tax_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">9606</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;total_input&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h3>
+<p>Both functions are available from <code>omnipath_utils.mapping</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_utils.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">identify</span><span class="p">,</span> <span class="n">all_mappings</span>
+
+<span class="c1"># Identify unknown identifiers</span>
+<span class="n">identify</span><span class="p">([</span><span class="s2">&quot;P04637&quot;</span><span class="p">,</span> <span class="s2">&quot;HMDB0000001&quot;</span><span class="p">])</span>
+
+<span class="c1"># Get all mappings</span>
+<span class="n">all_mappings</span><span class="p">([</span><span class="s2">&quot;P04637&quot;</span><span class="p">],</span> <span class="s2">&quot;uniprot&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>And from the client:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_client.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">identify</span><span class="p">,</span> <span class="n">all_mappings</span>
+
+<span class="n">identify</span><span class="p">([</span><span class="s2">&quot;P04637&quot;</span><span class="p">,</span> <span class="s2">&quot;HMDB0000001&quot;</span><span class="p">])</span>
+<span class="n">all_mappings</span><span class="p">([</span><span class="s2">&quot;P04637&quot;</span><span class="p">],</span> <span class="s2">&quot;uniprot&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>Both require database mode (PostgreSQL) on the server side.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": [], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
