@@ -66,6 +66,7 @@ class DatabaseBuilder:
             'file',
             'uniprot_ftp',
             'metanetx',
+            'bigg',
         ]
 
         with Session(self.engine) as session:
@@ -635,6 +636,7 @@ class DatabaseBuilder:
         self._populate_unichem()
         self._populate_ramp()
         self._populate_metanetx()
+        self._populate_bigg()
 
     # ------------------------------------------------------------------
     # UniChem auto-discovery
@@ -1149,6 +1151,13 @@ class DatabaseBuilder:
     # MetaNetX cross-references
     # ------------------------------------------------------------------
 
+    _BIGG_PAIRS = [
+        ("bigg", "chebi"),
+        ("bigg", "hmdb"),
+        ("bigg", "kegg"),
+        ("bigg", "metanetx"),
+    ]
+
     _METANETX_PAIRS = [
         ("bigg", "chebi"),
         ("bigg", "hmdb"),
@@ -1168,10 +1177,30 @@ class DatabaseBuilder:
 
         _log.info("Building MetaNetX cross-reference mappings...")
 
+    _BIGG_PAIRS = [
+        ("bigg", "chebi"),
+        ("bigg", "hmdb"),
+        ("bigg", "kegg"),
+        ("bigg", "metanetx"),
+    ]
+
         for src, tgt in self._METANETX_PAIRS:
             try:
                 self.populate_mapping(src, tgt, 0, "metanetx")
             except Exception as e:
                 _log.warning(
                     "MetaNetX %s -> %s failed: %s", src, tgt, e,
+                )
+
+    def _populate_bigg(self):
+        """Build BiGG metabolite ID mappings from BiGG Models TSV."""
+
+        _log.info("Building BiGG metabolite cross-reference mappings...")
+
+        for src, tgt in self._BIGG_PAIRS:
+            try:
+                self.populate_mapping(src, tgt, 0, "bigg")
+            except Exception as e:
+                _log.warning(
+                    "BiGG %s -> %s failed: %s", src, tgt, e,
                 )
