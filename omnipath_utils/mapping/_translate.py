@@ -43,6 +43,11 @@ def translate_core(
     ncbi_tax_id = ncbi_tax_id or DEFAULT_ORGANISM
     reg = IdTypeRegistry.get()
     id_type = reg.resolve(id_type) or id_type
+
+    # Normalise HMDB IDs (old 5-digit → 7-digit format)
+    if id_type == "hmdb":
+        from omnipath_utils.mapping._special import normalise_hmdb
+        identifiers = [normalise_hmdb(i) for i in identifiers]
     target_id_type = reg.resolve(target_id_type) or target_id_type
 
     mapper = Mapper.get()

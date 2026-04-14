@@ -41,6 +41,11 @@ def translate_ids(
         'tax': ncbi_tax_id,
     }
 
+
+    # Normalise HMDB IDs (old 5-digit → 7-digit format)
+    if source_type == "hmdb" and identifiers is not None:
+        from omnipath_utils.mapping._special import normalise_hmdb
+        identifiers = [normalise_hmdb(i) for i in identifiers]
     id_filter = ''
     if identifiers is not None:
         id_filter = 'AND m.source_id = ANY(:ids)'

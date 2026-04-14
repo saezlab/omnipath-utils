@@ -215,3 +215,45 @@ def strip_prefix(
         return set()
     stripped = name.split(':', 1)[1]
     return mapper._direct_lookup(stripped, id_type, target_id_type, ncbi_tax_id)
+
+
+# ------------------------------------------------------------------
+# HMDB ID normalisation
+# ------------------------------------------------------------------
+
+import re
+
+_HMDB_RE = re.compile(r"^HMDB(\d+)$", re.IGNORECASE)
+
+
+def normalise_hmdb(hmdb_id: str) -> str:
+    """Normalise an HMDB ID to the current 7-digit format.
+
+    Converts old 5-digit format (``HMDB00001``) to the current 7-digit
+    format (``HMDB0000001``).  IDs already in 7-digit format are
+    returned unchanged.  Non-HMDB strings are returned as-is.
+
+    Args:
+        hmdb_id: HMDB identifier string.
+
+    Returns:
+        Normalised HMDB ID string.
+
+    Examples:
+        >>> normalise_hmdb("HMDB00001")
+        "HMDB0000001"
+        >>> normalise_hmdb("HMDB0000001")
+        "HMDB0000001"
+    """
+
+    m = _HMDB_RE.match(hmdb_id)
+
+    if m is None:
+        return hmdb_id
+
+    digits = m.group(1)
+
+    if len(digits) < 7:
+        digits = digits.zfill(7)
+
+    return f"HMDB{digits}"
