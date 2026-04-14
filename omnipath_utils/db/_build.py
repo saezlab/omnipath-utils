@@ -1151,6 +1151,7 @@ class DatabaseBuilder:
     # MetaNetX cross-references
     # ------------------------------------------------------------------
 
+
     _BIGG_PAIRS = [
         ("bigg", "chebi"),
         ("bigg", "hmdb"),
@@ -1176,13 +1177,6 @@ class DatabaseBuilder:
         """Build MetaNetX pairwise metabolite mappings."""
 
         _log.info("Building MetaNetX cross-reference mappings...")
-
-    _BIGG_PAIRS = [
-        ("bigg", "chebi"),
-        ("bigg", "hmdb"),
-        ("bigg", "kegg"),
-        ("bigg", "metanetx"),
-    ]
 
         for src, tgt in self._METANETX_PAIRS:
             try:
