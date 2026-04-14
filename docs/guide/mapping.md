@@ -24,7 +24,7 @@
 omnipath-utils translates between 97 biological identifier types --
 gene symbols, UniProt accessions, Ensembl IDs, Entrez gene IDs, small
 molecule identifiers, miRNA names, and more. Data comes from UniProt,
-Ensembl BioMart, miRBase, HMDB, RaMP, and UniChem.
+Ensembl BioMart, miRBase, HMDB, RaMP, UniChem, MetaNetX, and BiGG.
 
 Biological ID mapping is inherently one-to-many. A gene symbol can
 correspond to multiple UniProt accessions (reviewed and unreviewed entries,
@@ -582,6 +582,8 @@ fails (network error, missing data), the next one is tried.
 | `unichem` | UniChem (EMBL-EBI) | Cross-references between chemical databases (ChEMBL, ChEBI, DrugBank, PubChem, etc.) | No | pypath.inputs.unichem |
 | `ramp` | RaMP-DB | Metabolite cross-references plus synonym mappings | No | pypath.inputs.ramp |
 | `hmdb` | HMDB | HMDB, PubChem, ChEBI, DrugBank, KEGG compound | Human only | pypath.inputs.hmdb |
+| `metanetx` | MNXref `chem_xref.tsv` (3.4M cross-reference entries) | Pairwise metabolite ID translation via MetaNetX bridge: bigg↔chebi, kegg↔chebi, hmdb↔chebi, lipidmaps↔chebi, swisslipids↔chebi, and all metanetx↔* combinations | No | pypath.inputs.metanetx |
+| `bigg` | BiGG Models universal metabolite TSV (9,090 universal metabolites across 85+ models) | bigg↔chebi, bigg↔hmdb, bigg↔kegg, bigg↔metanetx | No | pypath.inputs.bigg |
 
 ### Pypath integration
 
@@ -616,7 +618,7 @@ is `ncbi_tax_id`; pass `0` for organism-independent backends.
 
 ## Small molecule identifiers
 
-Small molecule mappings are provided by three backends:
+Small molecule mappings are provided by five backends:
 
 - **UniChem** -- cross-references between chemical databases maintained by
   EMBL-EBI. Covers ChEMBL, ChEBI, DrugBank, PubChem, KEGG, and others.
@@ -625,6 +627,18 @@ Small molecule mappings are provided by three backends:
   names to database IDs).
 - **HMDB** -- the Human Metabolome Database. Maps between HMDB, PubChem,
   ChEBI, DrugBank, and KEGG compound identifiers.
+- **MetaNetX** -- the MNXref namespace reconciliation database. Provides
+  pairwise metabolite ID translation via MetaNetX as a bridge identifier.
+  Covers 82K hmdb→chebi, 45K kegg→chebi, 23K lipidmaps→chebi, and
+  11K bigg→chebi mappings. Supported pairs include bigg↔chebi,
+  kegg↔chebi, hmdb↔chebi, lipidmaps↔chebi, swisslipids↔chebi, and
+  all metanetx↔* combinations.
+- **BiGG** -- the BiGG Models database of genome-scale metabolic network
+  reconstructions. Provides bigg↔chebi, bigg↔hmdb, bigg↔kegg, and
+  bigg↔metanetx mappings from 9,090 universal metabolites across 85+
+  models. Coverage includes 2,145 BiGG metabolites with ChEBI (10,319
+  pairs including ChEBI ontology hierarchy). Combined with MetaNetX,
+  gives maximum BiGG→ChEBI coverage.
 
 Small molecule identifiers are not organism-specific. Backends receive
 `ncbi_tax_id=0` (or ignore the parameter). HMDB data is human-derived
@@ -648,6 +662,23 @@ map_name('5957', 'pubchem', 'chebi')
 
 # HMDB to KEGG
 map_name('HMDB0000001', 'hmdb', 'kegg')
+```
+
+### HMDB identifier normalisation
+
+HMDB identifiers have two historical formats: the old 5-digit format
+(`HMDB00001`) and the current 7-digit format (`HMDB0000001`). The mapper
+automatically normalises the old format to 7-digit in all translation
+APIs (Python and REST). This is applied transparently -- you can pass
+either format as input, and results always use the 7-digit format.
+
+```python
+# Both formats work; results always use 7-digit
+map_name('HMDB00001', 'hmdb', 'chebi')
+# {'16044'}
+
+map_name('HMDB0000001', 'hmdb', 'chebi')
+# {'16044'}
 ```
 
 ## Identifying unknown identifiers

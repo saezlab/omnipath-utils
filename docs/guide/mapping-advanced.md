@@ -123,6 +123,8 @@ Available backends:
 | `unichem` | UniChem (EMBL-EBI) | Chemical compound cross-references |
 | `ramp` | RaMP-DB | Metabolite cross-references and synonym mappings |
 | `hmdb` | HMDB | HMDB-centric metabolite mappings |
+| `metanetx` | MNXref | Pairwise metabolite ID translation via MetaNetX bridge (bigg↔chebi, kegg↔chebi, hmdb↔chebi, lipidmaps↔chebi, swisslipids↔chebi, metanetx↔*) |
+| `bigg` | BiGG Models | BiGG metabolite mappings (bigg↔chebi, bigg↔hmdb, bigg↔kegg, bigg↔metanetx) |
 
 When `backend=` is specified, the mapper skips its cached table and
 forces a reload from the requested backend. This is useful when the
@@ -365,7 +367,7 @@ builds a candidate list:
    types have a column defined in `id_types.yaml` under that backend's
    key. If both columns exist, the backend is added to the candidate list.
 
-2. **Custom backends** (`mirbase`, `unichem`, `ramp`, `hmdb`): These
+2. **Custom backends** (`mirbase`, `unichem`, `ramp`, `hmdb`, `metanetx`, `bigg`): These
    are always appended to the candidate list. They perform their own
    internal support check in their `read()` method and return an empty
    dict if the ID type pair is not supported.
@@ -447,6 +449,34 @@ returns non-empty data wins.
 - **Organism-specific:** Human-derived data, but identifiers are universal.
 - **When to force:** HMDB-centric metabolite lookups.
 
+#### metanetx
+
+- **Data:** Pairwise metabolite ID cross-references from MNXref
+  `chem_xref.tsv` (3.4M cross-reference entries).
+- **Access:** `pypath.inputs.metanetx.metanetx_mapping()` (requires pypath).
+- **Organism-specific:** No (chemicals are universal).
+- **Supported pairs:** bigg↔chebi, kegg↔chebi, hmdb↔chebi,
+  lipidmaps↔chebi, swisslipids↔chebi, and all metanetx↔*
+  combinations.
+- **Coverage:** 82K hmdb→chebi, 45K kegg→chebi, 23K lipidmaps→chebi,
+  11K bigg→chebi via MetaNetX bridge.
+- **When to force:** Metabolite ID translation, especially for
+  lipidmaps→chebi and swisslipids→chebi which are not available in
+  other backends.
+
+#### bigg
+
+- **Data:** BiGG Models universal metabolite TSV (9,090 universal
+  metabolites across 85+ models).
+- **Access:** `pypath.inputs.bigg.bigg_metabolite_mapping()` (requires pypath).
+- **Organism-specific:** No (chemicals are universal).
+- **Supported pairs:** bigg↔chebi, bigg↔hmdb, bigg↔kegg,
+  bigg↔metanetx.
+- **Coverage:** 2,145 BiGG metabolites with ChEBI (10,319 pairs
+  including ChEBI ontology hierarchy).
+- **When to force:** BiGG metabolite ID translation. Combined with
+  the MetaNetX backend, gives maximum BiGG→ChEBI coverage.
+
 ### Writing a new backend
 
 To add a new data source:
@@ -490,6 +520,19 @@ To add a new data source:
 4. The backend will be automatically discovered by `_find_backends()`
    if it is a column-based backend, or by the custom backends list if
    you add it to `_CUSTOM_BACKENDS` in `Mapper`.
+
+## HMDB identifier normalisation
+
+HMDB identifiers have two historical formats: the old 5-digit format
+(`HMDB00001`) and the current 7-digit format (`HMDB0000001`). All
+translation APIs (Python and REST) automatically normalise the old format
+to the 7-digit form. This normalisation is applied transparently at input
+time -- both formats are accepted, and results always use the 7-digit
+format.
+
+The normalisation is applied by the mapper before any backend lookup, so
+it works consistently across all backends that handle HMDB identifiers
+(`hmdb`, `metanetx`, `bigg`, `ramp`, `unichem`).
 
 ## Database tables for special cases
 
