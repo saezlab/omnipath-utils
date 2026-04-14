@@ -31,8 +31,9 @@ ENSEMBL = [
 ]
 
 METABOLITE = [
-    # These are not organism-specific -- built once with ncbi_tax_id=0
-    # UniChem, RaMP, HMDB handled separately
+    # Metabolite mappings are organism-agnostic (ncbi_tax_id=0) and handled
+    # by populate_metabolites() which auto-discovers all pairs from
+    # UniChem, RaMP, MetaNetX, and BiGG backends.
 ]
 
 MIRNA = [

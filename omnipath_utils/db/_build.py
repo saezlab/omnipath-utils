@@ -628,9 +628,9 @@ class DatabaseBuilder:
             _log.info('Exported %s: %d rows', fname, len(rows))
 
     def populate_metabolites(self):
-        """Populate metabolite ID mappings from UniChem and RaMP.
+        """Populate metabolite ID mappings from UniChem, RaMP, MetaNetX and BiGG.
 
-        Auto-discovers all available ID types from both sources and builds
+        Auto-discovers all available ID types from all sources and builds
         all available pairwise mappings.
         """
         self._populate_unichem()
