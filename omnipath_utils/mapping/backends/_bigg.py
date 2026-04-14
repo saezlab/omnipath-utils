@@ -7,12 +7,12 @@ Covers all 9,090 universal metabolites across 85+ BiGG models.
 
 from __future__ import annotations
 
-from pkg_infra.logger import get_logger
+import logging
 
 from omnipath_utils.mapping.backends import register
 from omnipath_utils.mapping.backends._base import MappingBackend
 
-_log = get_logger(__name__)
+_log = logging.getLogger(__name__)
 
 
 class BiggBackend(MappingBackend):
