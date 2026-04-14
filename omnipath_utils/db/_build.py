@@ -65,6 +65,7 @@ class DatabaseBuilder:
             'mirbase',
             'file',
             'uniprot_ftp',
+            'metanetx',
         ]
 
         with Session(self.engine) as session:
@@ -633,6 +634,7 @@ class DatabaseBuilder:
         """
         self._populate_unichem()
         self._populate_ramp()
+        self._populate_metanetx()
 
     # ------------------------------------------------------------------
     # UniChem auto-discovery
@@ -1142,3 +1144,34 @@ class DatabaseBuilder:
             self.export_parquet(tables, parquet_dir)
 
         _log.info('Preset "%s" build complete', preset)
+
+    # ------------------------------------------------------------------
+    # MetaNetX cross-references
+    # ------------------------------------------------------------------
+
+    _METANETX_PAIRS = [
+        ("bigg", "chebi"),
+        ("bigg", "hmdb"),
+        ("bigg", "kegg"),
+        ("kegg", "chebi"),
+        ("hmdb", "chebi"),
+        ("lipidmaps", "chebi"),
+        ("swisslipids", "chebi"),
+        ("metanetx", "chebi"),
+        ("metanetx", "hmdb"),
+        ("metanetx", "kegg"),
+        ("metanetx", "bigg"),
+    ]
+
+    def _populate_metanetx(self):
+        """Build MetaNetX pairwise metabolite mappings."""
+
+        _log.info("Building MetaNetX cross-reference mappings...")
+
+        for src, tgt in self._METANETX_PAIRS:
+            try:
+                self.populate_mapping(src, tgt, 0, "metanetx")
+            except Exception as e:
+                _log.warning(
+                    "MetaNetX %s -> %s failed: %s", src, tgt, e,
+                )

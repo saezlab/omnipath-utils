@@ -463,6 +463,7 @@ hmdb:
   backends:
     hmdb: accession
     chalmers_gem: metHMDBID
+    metanetx: hmdb
     ramp: hmdb
   aliases:
     - hmdb_id
@@ -474,6 +475,7 @@ chebi:
   backends:
     hmdb: chebi_id
     chalmers_gem: metChEBIID
+    metanetx: chebi
     ramp: chebi
   aliases:
     - chebi_id
@@ -498,6 +500,7 @@ kegg:
   backends:
     hmdb: kegg_id
     chalmers_gem: metKEGGID
+    metanetx: kegg
     ramp: kegg
   aliases:
     - kegg_id
@@ -530,6 +533,7 @@ lipidmaps:
   curie_prefix: lipidmaps
   backends:
     chalmers_gem: metLipidMapsID
+    metanetx: lipidmaps
     ramp: LIPIDMAPS
   aliases:
     - lipid_maps
@@ -622,6 +626,7 @@ bigg:
   backends:
     hmdb: bigg_id
     chalmers_gem: metBiGGID
+    metanetx: bigg
   aliases:
     - bigg_id
 
@@ -763,6 +768,7 @@ metanetx:
   curie_prefix: metanetx.chemical
   backends:
     chalmers_gem: metMetaNetXID
+    metanetx: metanetx
   aliases:
     - metanetx_id
 
