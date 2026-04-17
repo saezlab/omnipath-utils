@@ -28,6 +28,7 @@ ENSEMBL = [
     ('ensp', 'ensg', 'biomart'),
     ('enst', 'ensg', 'biomart'),
     ('ensp', 'uniprot', 'biomart'),
+    ('ensg', 'uniprot', 'biomart'),
 ]
 
 METABOLITE = [
@@ -41,6 +42,16 @@ MIRNA = [
     # Handled by mirbase backend, not standard mapping pairs
 ]
 
+
+# COSMOS PKN-specific protein mappings (cleanup pipeline)
+COSMOS_CLEANUP = [
+    # Secondary -> primary UniProt AC resolution
+    ('uniprot-sec', 'uniprot-pri', 'uniprot'),
+    # UniProt -> gene symbol (for TrEMBL -> SwissProt resolution)
+    ('uniprot', 'genesymbol', 'uniprot'),
+    # SwissProt lookup (already in PROTEIN_CORE via genesymbol -> swissprot)
+]
+
 # Preset definitions
 PRESETS = {
     'minimal': {
@@ -50,6 +61,16 @@ PRESETS = {
         'metabolite': False,
         'mirna': False,
         'orthology': False,
+        'reflists': True,
+    },
+
+    'cosmos': {
+        'description': 'All mappings needed by COSMOS PKN build (human + mouse)',
+        'organisms': CORE,
+        'mappings': PROTEIN_CORE + ENSEMBL + COSMOS_CLEANUP,
+        'metabolite': True,
+        'mirna': False,
+        'orthology': True,
         'reflists': True,
     },
     'standard': {
