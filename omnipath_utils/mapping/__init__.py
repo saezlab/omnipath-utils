@@ -198,7 +198,7 @@ def translation_table(
             from omnipath_utils.mapping._id_types import IdTypeRegistry
 
             reg = IdTypeRegistry.get()
-            ncbi_tax_id = ncbi_tax_id or 9606
+            ncbi_tax_id = ncbi_tax_id if ncbi_tax_id is not None else 9606
             src = reg.resolve(id_type) or id_type
             tgt = reg.resolve(target_id_type) or target_id_type
             return get_full_table(session, src, tgt, ncbi_tax_id)
