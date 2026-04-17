@@ -10,6 +10,44 @@ from omnipath_utils.mapping._id_types import IdTypeRegistry
 _log = logging.getLogger(__name__)
 
 
+
+def _get_db_session():
+    """Get a DB session if OMNIPATH_UTILS_DB_URL is set."""
+    import os
+    db_url = os.environ.get("OMNIPATH_UTILS_DB_URL")
+    if not db_url:
+        return None
+    try:
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+        engine = create_engine(db_url)
+        return Session(engine)
+    except Exception:
+        return None
+
+
+def _translate_via_db(
+    identifiers, id_type, target_id_type, ncbi_tax_id,
+    raw=False, uniprot_cleanup=True,
+):
+    """Translate via PostgreSQL if available. Returns None if DB not configured."""
+    session = _get_db_session()
+    if session is None:
+        return None
+    try:
+        from omnipath_utils.db._query import translate_ids
+        result = translate_ids(session, identifiers, id_type, target_id_type, ncbi_tax_id)
+        if not raw and target_id_type == "uniprot" and uniprot_cleanup:
+            from omnipath_utils.mapping._cleanup import uniprot_cleanup_batch
+            result = uniprot_cleanup_batch(result, ncbi_tax_id, session=session)
+        return result
+    except Exception as exc:
+        _log.debug("DB translate failed: %s", exc)
+        return None
+    finally:
+        session.close()
+
+
 def translate_core(
     identifiers: list[str],
     id_type: str,

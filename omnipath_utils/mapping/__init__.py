@@ -182,7 +182,30 @@ def translation_table(
     target_id_type: str,
     ncbi_tax_id: int | None = None,
 ) -> dict[str, set[str]]:
-    """Get the full translation table."""
+    """Get the full translation table.
+
+    Uses PostgreSQL if ``OMNIPATH_UTILS_DB_URL`` is set,
+    otherwise falls back to in-memory backends.
+    """
+
+    from omnipath_utils.mapping._translate import _get_db_session
+
+    session = _get_db_session()
+
+    if session is not None:
+        try:
+            from omnipath_utils.db._query import get_full_table
+            from omnipath_utils.mapping._id_types import IdTypeRegistry
+
+            reg = IdTypeRegistry.get()
+            ncbi_tax_id = ncbi_tax_id or 9606
+            src = reg.resolve(id_type) or id_type
+            tgt = reg.resolve(target_id_type) or target_id_type
+            return get_full_table(session, src, tgt, ncbi_tax_id)
+        except Exception:
+            pass
+        finally:
+            session.close()
 
     return Mapper.get().translation_table(
         id_type,
