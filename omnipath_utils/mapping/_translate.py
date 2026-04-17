@@ -36,7 +36,7 @@ def _translate_via_db(
         return None
     try:
         from omnipath_utils.db._query import translate_ids
-        result = translate_ids(session, identifiers, id_type, target_id_type, ncbi_tax_id)
+        result, _backends = translate_ids(session, identifiers, id_type, target_id_type, ncbi_tax_id)
         if not raw and target_id_type == "uniprot" and uniprot_cleanup:
             from omnipath_utils.mapping._cleanup import uniprot_cleanup_batch
             result = uniprot_cleanup_batch(result, ncbi_tax_id, session=session)
