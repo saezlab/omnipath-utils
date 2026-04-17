@@ -144,3 +144,130 @@ def _filter_organism(uniprots: set[str], ncbi_tax_id: int) -> set[str]:
     # If filtering removed everything, return originals
     # (the proteome list might be incomplete)
     return filtered if filtered else uniprots
+
+
+# ------------------------------------------------------------------
+# Batch cleanup — vectorized version for server and DB-backed API
+# ------------------------------------------------------------------
+
+
+def uniprot_cleanup_batch(
+    results: dict[str, set[str]],
+    ncbi_tax_id: int,
+    session=None,
+) -> dict[str, set[str]]:
+    """Clean up UniProt IDs in batch: prefer SwissProt, validate, normalize.
+
+    Vectorized version of ``uniprot_cleanup()`` — does O(1) SQL queries
+    instead of O(n) per-ID lookups.  Operates on the full results dict
+    from a translation batch.
+
+    Args:
+        results: Dict mapping source IDs to sets of UniProt ACs.
+        ncbi_tax_id: NCBI Taxonomy ID.
+        session: SQLAlchemy session (required for DB queries).
+
+    Returns:
+        Same dict structure with cleaned UniProt ACs.
+    """
+
+    if not results or not session:
+        return results
+
+    from omnipath_utils.db._query import translate_ids
+
+    # Collect all UniProt ACs across all results
+    all_acs: set[str] = set()
+    for targets in results.values():
+        all_acs.update(targets)
+
+    if not all_acs:
+        return results
+
+    ac_list = list(all_acs)
+
+    # Step 1: secondary -> primary (batch)
+    sec_pri = translate_ids(session, ac_list, "uniprot-sec", "uniprot-pri", ncbi_tax_id)
+
+    # Step 2: SwissProt membership check
+    try:
+        from omnipath_utils.reflists import all_swissprots
+        swissprot_set = all_swissprots(ncbi_tax_id)
+    except Exception:
+        swissprot_set = set()
+
+    # Step 3: For TrEMBL IDs, batch lookup gene symbols + swissprot
+    trembl_acs = [ac for ac in ac_list if swissprot_set and ac not in swissprot_set]
+    trembl_to_gs: dict[str, set[str]] = {}
+    gs_to_sp: dict[str, set[str]] = {}
+
+    if trembl_acs:
+        trembl_to_gs = translate_ids(
+            session, trembl_acs, "trembl", "genesymbol", ncbi_tax_id,
+        )
+        # Also try uniprot -> genesymbol for IDs not found via trembl
+        missing_gs = [ac for ac in trembl_acs if not trembl_to_gs.get(ac)]
+        if missing_gs:
+            uniprot_gs = translate_ids(
+                session, missing_gs, "uniprot", "genesymbol", ncbi_tax_id,
+            )
+            for ac, gs in uniprot_gs.items():
+                if gs:
+                    trembl_to_gs[ac] = gs
+
+        # Collect all gene symbols and batch lookup swissprot
+        all_gs: set[str] = set()
+        for gs_set in trembl_to_gs.values():
+            all_gs.update(gs_set)
+
+        if all_gs:
+            gs_to_sp = translate_ids(
+                session, list(all_gs), "genesymbol", "swissprot", ncbi_tax_id,
+            )
+
+    # Step 4: Proteome filter
+    try:
+        from omnipath_utils.reflists import all_uniprots
+        proteome = all_uniprots(ncbi_tax_id)
+    except Exception:
+        proteome = set()
+
+    # Apply all steps to each result
+    cleaned: dict[str, set[str]] = {}
+
+    for src_id, targets in results.items():
+        clean_set: set[str] = set()
+
+        for ac in targets:
+            # 1. Secondary -> primary
+            primaries = sec_pri.get(ac)
+            resolved = primaries if primaries else {ac}
+
+            for rid in resolved:
+                # 2. TrEMBL -> SwissProt
+                if swissprot_set and rid not in swissprot_set:
+                    gs = trembl_to_gs.get(rid, set())
+                    found_sp = False
+                    for g in gs:
+                        sp = gs_to_sp.get(g, set())
+                        if sp:
+                            clean_set.update(sp)
+                            found_sp = True
+                            break
+                    if not found_sp:
+                        clean_set.add(rid)
+                else:
+                    clean_set.add(rid)
+
+        # 3. Proteome filter
+        if proteome:
+            filtered = clean_set & proteome
+            if filtered:
+                clean_set = filtered
+
+        # 4. Format validation
+        clean_set = {u for u in clean_set if is_uniprot_ac(u)}
+
+        cleaned[src_id] = clean_set if clean_set else targets
+
+    return cleaned

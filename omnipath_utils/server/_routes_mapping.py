@@ -23,6 +23,7 @@ def _resolve_and_cleanup(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int,
+    session=None,
 ) -> dict[str, set[str]]:
     """Apply alias resolution and UniProt cleanup to results."""
 
@@ -33,18 +34,21 @@ def _resolve_and_cleanup(
 
     if target_resolved == 'uniprot':
         try:
-            from omnipath_utils.mapping._mapper import Mapper
-            from omnipath_utils.mapping._cleanup import uniprot_cleanup
+            if session:
+                # Batch cleanup via DB (vectorized — O(1) queries)
+                from omnipath_utils.mapping._cleanup import uniprot_cleanup_batch
+                result = uniprot_cleanup_batch(result, ncbi_tax_id, session=session)
+            else:
+                # Per-ID cleanup via in-memory mapper (fallback)
+                from omnipath_utils.mapping._mapper import Mapper
+                from omnipath_utils.mapping._cleanup import uniprot_cleanup
 
-            mapper = Mapper.get()
-
-            for src_id in result:
-                if result[src_id]:
-                    result[src_id] = uniprot_cleanup(
-                        result[src_id],
-                        ncbi_tax_id,
-                        mapper=mapper,
-                    )
+                mapper = Mapper.get()
+                for src_id in result:
+                    if result[src_id]:
+                        result[src_id] = uniprot_cleanup(
+                            result[src_id], ncbi_tax_id, mapper=mapper,
+                        )
         except Exception:
             _log.debug(
                 'UniProt cleanup failed for target %s, returning raw results.',
@@ -318,6 +322,7 @@ class MappingController(Controller):
                 id_type_resolved,
                 target_resolved,
                 ncbi_tax_id,
+                session=session,
             )
 
         return _build_translate_response(
@@ -394,6 +399,7 @@ class MappingController(Controller):
                 id_type_resolved,
                 target_resolved,
                 ncbi_tax_id,
+                session=session,
             )
 
         return _build_translate_response(
