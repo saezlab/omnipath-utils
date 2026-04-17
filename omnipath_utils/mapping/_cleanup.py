@@ -208,7 +208,7 @@ def uniprot_cleanup_batch(
     ac_list = list(all_acs)
 
     # Step 1: secondary -> primary (batch)
-    sec_pri = translate_ids(session, ac_list, "uniprot-sec", "uniprot-pri", ncbi_tax_id)
+    sec_pri, _ = translate_ids(session, ac_list, "uniprot-sec", "uniprot-pri", ncbi_tax_id)
 
     # Step 2: SwissProt membership check (from DB reflist table)
     swissprot_set = _reflist_from_db(session, "swissprot", ncbi_tax_id)
@@ -219,13 +219,13 @@ def uniprot_cleanup_batch(
     gs_to_sp: dict[str, set[str]] = {}
 
     if trembl_acs:
-        trembl_to_gs = translate_ids(
+        trembl_to_gs, _ = translate_ids(
             session, trembl_acs, "trembl", "genesymbol", ncbi_tax_id,
         )
         # Also try uniprot -> genesymbol for IDs not found via trembl
         missing_gs = [ac for ac in trembl_acs if not trembl_to_gs.get(ac)]
         if missing_gs:
-            uniprot_gs = translate_ids(
+            uniprot_gs, _ = translate_ids(
                 session, missing_gs, "uniprot", "genesymbol", ncbi_tax_id,
             )
             for ac, gs in uniprot_gs.items():
@@ -238,7 +238,7 @@ def uniprot_cleanup_batch(
             all_gs.update(gs_set)
 
         if all_gs:
-            gs_to_sp = translate_ids(
+            gs_to_sp, _ = translate_ids(
                 session, list(all_gs), "genesymbol", "swissprot", ncbi_tax_id,
             )
 
