@@ -87,6 +87,15 @@ def translate_core(
     Returns:
         Dict mapping each source ID to a set of target IDs.
     """
+    # Try DB mode first (fast SQL queries)
+    db_result = _translate_via_db(
+        identifiers, id_type, target_id_type, ncbi_tax_id,
+        raw=raw, uniprot_cleanup=uniprot_cleanup,
+    )
+    if db_result is not None:
+        return db_result
+
+    # Fall back to in-memory mode
     from omnipath_utils.mapping._mapper import Mapper
 
     ncbi_tax_id = ncbi_tax_id or DEFAULT_ORGANISM
