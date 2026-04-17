@@ -151,6 +151,27 @@ def _filter_organism(uniprots: set[str], ncbi_tax_id: int) -> set[str]:
 # ------------------------------------------------------------------
 
 
+
+
+def _reflist_from_db(session, list_name: str, ncbi_tax_id: int) -> set[str]:
+    """Query a reference list from the database."""
+    try:
+        from sqlalchemy import text as sql_text
+        from omnipath_utils.db._connection import SCHEMA
+
+        rows = session.execute(
+            sql_text(f"""
+                SELECT identifier
+                FROM {SCHEMA}.reflist
+                WHERE list_name = :name AND ncbi_tax_id = :tax
+            """),
+            {"name": list_name, "tax": ncbi_tax_id},
+        )
+        return {row[0] for row in rows}
+    except Exception:
+        return set()
+
+
 def uniprot_cleanup_batch(
     results: dict[str, set[str]],
     ncbi_tax_id: int,
@@ -189,12 +210,8 @@ def uniprot_cleanup_batch(
     # Step 1: secondary -> primary (batch)
     sec_pri = translate_ids(session, ac_list, "uniprot-sec", "uniprot-pri", ncbi_tax_id)
 
-    # Step 2: SwissProt membership check
-    try:
-        from omnipath_utils.reflists import all_swissprots
-        swissprot_set = all_swissprots(ncbi_tax_id)
-    except Exception:
-        swissprot_set = set()
+    # Step 2: SwissProt membership check (from DB reflist table)
+    swissprot_set = _reflist_from_db(session, "swissprot", ncbi_tax_id)
 
     # Step 3: For TrEMBL IDs, batch lookup gene symbols + swissprot
     trembl_acs = [ac for ac in ac_list if swissprot_set and ac not in swissprot_set]
@@ -225,12 +242,11 @@ def uniprot_cleanup_batch(
                 session, list(all_gs), "genesymbol", "swissprot", ncbi_tax_id,
             )
 
-    # Step 4: Proteome filter
-    try:
-        from omnipath_utils.reflists import all_uniprots
-        proteome = all_uniprots(ncbi_tax_id)
-    except Exception:
-        proteome = set()
+    # Step 4: Proteome filter (from DB reflist table)
+    proteome = (
+        _reflist_from_db(session, "swissprot", ncbi_tax_id)
+        | _reflist_from_db(session, "trembl", ncbi_tax_id)
+    )
 
     # Apply all steps to each result
     cleaned: dict[str, set[str]] = {}
