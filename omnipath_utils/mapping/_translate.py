@@ -11,8 +11,16 @@ _log = logging.getLogger(__name__)
 
 
 
+_db_engine = None
+
+
 def _get_db_session():
-    """Get a DB session if OMNIPATH_UTILS_DB_URL is set."""
+    """Get a DB session if OMNIPATH_UTILS_DB_URL is set.
+
+    Caches the SQLAlchemy engine to avoid re-creating it on every call.
+    """
+    global _db_engine
+
     import os
     db_url = os.environ.get("OMNIPATH_UTILS_DB_URL")
     if not db_url:
@@ -20,8 +28,11 @@ def _get_db_session():
     try:
         from sqlalchemy import create_engine
         from sqlalchemy.orm import Session
-        engine = create_engine(db_url)
-        return Session(engine)
+
+        if _db_engine is None:
+            _db_engine = create_engine(db_url)
+
+        return Session(_db_engine)
     except Exception:
         return None
 
