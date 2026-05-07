@@ -45,6 +45,7 @@ nav:
 - Deployment:
   - Database Build: deployment/database.md
   - Web Service: deployment/server.md
+  - systemd Service: deployment/systemd.md
 - About: about.md
 markdown_extensions:
 - pymdownx.highlight: null
