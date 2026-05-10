@@ -112,3 +112,23 @@ account with no login shell), copy the same unit to
 target home directory, add `User=` / `Group=` lines under `[Service]`,
 and run `systemctl daemon-reload && systemctl enable --now
 omnipath-utils.service` as root. No other changes are required.
+
+## Multiple instances on one host
+
+For shared development hosts where several instances of the service
+need to run side-by-side (e.g. a `staging` deployment alongside a
+production deployment, or a per-feature dev URL), a templated unit is
+shipped at [`deploy/systemd/omnipath-utils@.service`][template].
+
+Lay each instance out at `~/instances/<name>/` &mdash; with `src/`,
+`.venv/`, `.env`, and `docker-compose.yml` (Postgres on a dedicated
+port) &mdash; then enable:
+
+```bash
+systemctl --user enable --now omnipath-utils@staging.service
+```
+
+Each instance gets its own database, port, and `server.log`. The same
+`loginctl enable-linger` once-per-user setup applies.
+
+[template]: https://github.com/saezlab/omnipath-utils/blob/main/deploy/systemd/omnipath-utils@.service
