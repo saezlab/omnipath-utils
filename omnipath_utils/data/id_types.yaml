@@ -913,7 +913,8 @@ mir-pre:
   label: miRBase precursor
   entity_type: mirna
   curie_prefix: mirbase
-  backends: {}
+  backends:
+    mirbase: mir-pre
   aliases:
     - mir_pre
     - mirbase_precursor
@@ -922,7 +923,8 @@ mir-mat-name:
   label: miRBase mature name
   entity_type: mirna
   curie_prefix: mirbase
-  backends: {}
+  backends:
+    mirbase: mir-mat-name
   aliases:
     - mir_mat_name
     - mirbase_mature_name
@@ -932,7 +934,8 @@ mir-name:
   label: miRBase name
   entity_type: mirna
   curie_prefix: mirbase
-  backends: {}
+  backends:
+    mirbase: mir-name
   aliases:
     - mir_name
     - mirbase_name
@@ -981,7 +984,8 @@ mirbase:
   label: miRBase Accession
   entity_type: mirna
   curie_prefix: mirbase
-  backends: {}
+  backends:
+    mirbase: mirbase
   aliases:
     - mirbase_ac
     - mirbase_accession
