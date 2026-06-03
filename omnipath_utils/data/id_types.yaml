@@ -474,6 +474,7 @@ chebi:
   curie_prefix: chebi
   backends:
     hmdb: chebi_id
+    chebi: chebi_id
     chalmers_gem: metChEBIID
     metanetx: chebi
     ramp: chebi
@@ -486,6 +487,7 @@ pubchem:
   curie_prefix: pubchem.compound
   backends:
     hmdb: pubchem_compound_id
+    pubchem: cid
     chalmers_gem: metPubChemID
     ramp: pubchem
   aliases:
@@ -532,6 +534,7 @@ lipidmaps:
   entity_type: small_molecule
   curie_prefix: lipidmaps
   backends:
+    lipidmaps: LM_ID
     chalmers_gem: metLipidMapsID
     metanetx: lipidmaps
     ramp: LIPIDMAPS
@@ -555,6 +558,10 @@ inchi:
   curie_prefix: inchi
   backends:
     hmdb: inchi
+    chebi: inchi
+    chembl: standard_inchi
+    lipidmaps: INCHI
+    pubchem: inchi
   aliases: []
 
 inchikey:
@@ -563,6 +570,10 @@ inchikey:
   curie_prefix: inchikey
   backends:
     hmdb: inchikey
+    chebi: inchikey
+    chembl: standard_inchi_key
+    lipidmaps: INCHI_KEY
+    pubchem: inchikey
   aliases: []
 
 smiles:
@@ -570,6 +581,10 @@ smiles:
   entity_type: small_molecule
   backends:
     hmdb: smiles
+    chebi: smiles
+    chembl: canonical_smiles
+    lipidmaps: SMILES
+    swisslipids: SMILES (pH7.3)
   aliases: []
 
 iupac:
@@ -684,6 +699,7 @@ swisslipids:
   entity_type: small_molecule
   curie_prefix: swisslipids
   backends:
+    swisslipids: Lipid ID
     ramp: swisslipids
   aliases:
     - swiss_lipids
@@ -976,6 +992,7 @@ chembl:
   curie_prefix: chembl.compound
   backends:
     unichem: chembl
+    chembl: chembl_id
   aliases:
     - chembl_id
     - chembl_compound

@@ -9,7 +9,7 @@ def main():
     """Main CLI entry point."""
     if len(sys.argv) < 2:
         print('Usage: omnipath-utils <command> [options]')
-        print('Commands: build, serve')
+        print('Commands: build, serve, export-resolver')
         sys.exit(1)
 
     cmd = sys.argv[1]
@@ -22,6 +22,10 @@ def main():
         from omnipath_utils.cli._serve import serve_cmd
 
         serve_cmd(sys.argv[2:])
+    elif cmd == 'export-resolver':
+        from omnipath_utils.cli._export_resolver import export_resolver_cmd
+
+        export_resolver_cmd(sys.argv[2:])
     else:
         print(f'Unknown command: {cmd}')
         sys.exit(1)

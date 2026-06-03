@@ -56,6 +56,7 @@ server = [
 build = [
     "omnipath-utils[db]",
     "pyarrow>=14.0",
+    "pyyaml>=6.0",
 ]
 pypath = [
     "pypath-omnipath>=0.16",
