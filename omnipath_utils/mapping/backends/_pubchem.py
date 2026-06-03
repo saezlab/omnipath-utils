@@ -1,13 +1,16 @@
 """PubChem structure-bearing mapping backend (Milestone I).
 
-Uses the legacy functional ``pypath.inputs.pubchem.pubchem_mapping(target,
-source='cid')`` (already ``dict[str, set]``) — the simplest path for PubChem,
-which maps CID ↔ structure id types. No RDKit, no pypath change.
+Streams ``pypath.inputs.pubchem.pubchem_mapping(target, source='cid')``, which
+yields ``(cid, value)`` rows from the compact PubChem FTP ``Extras`` tables
+(``Compound/Extras/CID-<TYPE>.gz``) -- CID -> standard InChIKey / InChI /
+SMILES. Because the rows are streamed, ``limit`` (``--pubchem-max-records``)
+is honoured by stopping early via :func:`itertools.islice`. No RDKit.
 """
 
 from __future__ import annotations
 
 import logging
+from itertools import islice
 
 from omnipath_utils.mapping.backends import register
 from omnipath_utils.mapping.backends._base import MappingBackend
@@ -15,21 +18,6 @@ from omnipath_utils.mapping.backends._base import MappingBackend
 _log = logging.getLogger(__name__)
 
 _CID_COLUMN = 'cid'
-
-
-def _setify(data: dict) -> dict[str, set[str]]:
-    return {
-        str(k): (set(map(str, v)) if isinstance(v, (set, list, tuple)) else {str(v)})
-        for k, v in (data or {}).items()
-    }
-
-
-def _invert(mapping: dict[str, set[str]]) -> dict[str, set[str]]:
-    inverted: dict[str, set[str]] = {}
-    for source, targets in mapping.items():
-        for target in targets:
-            inverted.setdefault(target, set()).add(source)
-    return inverted
 
 
 class PubchemBackend(MappingBackend):
@@ -44,17 +32,37 @@ class PubchemBackend(MappingBackend):
         *,
         src_col: str,
         tgt_col: str,
+        limit: int | None = None,
         **kwargs: object,
     ) -> dict[str, set[str]]:
         from pypath.inputs.pubchem import pubchem_mapping
 
-        # pubchem_mapping always maps CID -> <other>; bridge both directions.
+        # One side is always the Compound CID; stream CID -> <structure> and
+        # orient the result accordingly.
         if src_col == _CID_COLUMN:
-            return _setify(pubchem_mapping(tgt_col, source=_CID_COLUMN))
-        if tgt_col == _CID_COLUMN:
-            return _invert(_setify(pubchem_mapping(src_col, source=_CID_COLUMN)))
-        _log.debug('pubchem backend only bridges via CID (%s -> %s)', src_col, tgt_col)
-        return {}
+            target, invert = tgt_col, False
+        elif tgt_col == _CID_COLUMN:
+            target, invert = src_col, True
+        else:
+            _log.debug(
+                'pubchem backend only bridges via CID (%s -> %s)',
+                src_col,
+                tgt_col,
+            )
+            return {}
+
+        rows = pubchem_mapping(target, source=_CID_COLUMN)
+        if limit is not None:
+            rows = islice(rows, limit)
+
+        result: dict[str, set[str]] = {}
+        for cid, value in rows:
+            if invert:
+                result.setdefault(value, set()).add(cid)
+            else:
+                result.setdefault(cid, set()).add(value)
+
+        return result
 
     def _read_direct(
         self,

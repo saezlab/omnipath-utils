@@ -562,6 +562,7 @@ inchi:
     chembl: standard_inchi
     lipidmaps: INCHI
     pubchem: inchi
+    swisslipids: InChI (pH7.3)
   aliases: []
 
 inchikey:
@@ -574,6 +575,7 @@ inchikey:
     chembl: standard_inchi_key
     lipidmaps: INCHI_KEY
     pubchem: inchikey
+    swisslipids: InChI key (pH7.3)
   aliases: []
 
 smiles:

@@ -57,6 +57,17 @@ def build_cmd(args: list[str]):
             'for all others. Default: no limit (full build).'
         ),
     )
+    parser.add_argument(
+        '--pubchem-max-records',
+        type=int,
+        default=None,
+        help=(
+            'Cap ONLY the PubChem -> InChIKey table at this many rows, while '
+            'every other resource loads in full. Use this to run an otherwise '
+            'complete build in reasonable time (PubChem is by far the largest '
+            'chemical namespace). Overrides --max-records for PubChem only.'
+        ),
+    )
     parser.add_argument('-v', '--verbose', action='store_true')
 
     opts = parser.parse_args(args)
@@ -83,7 +94,11 @@ def build_cmd(args: list[str]):
 
     from omnipath_utils.db._build import DatabaseBuilder
 
-    builder = DatabaseBuilder(db_url=opts.db_url, max_records=opts.max_records)
+    builder = DatabaseBuilder(
+        db_url=opts.db_url,
+        max_records=opts.max_records,
+        pubchem_max_records=opts.pubchem_max_records,
+    )
 
     if opts.preset:
         builder.build_preset(opts.preset, parquet_dir=opts.parquet_dir)

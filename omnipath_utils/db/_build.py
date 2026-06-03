@@ -24,9 +24,11 @@ class DatabaseBuilder:
         self,
         db_url: str | None = None,
         max_records: int | None = None,
+        pubchem_max_records: int | None = None,
     ):
         self._db_url = db_url
         self._max_records = max_records
+        self._pubchem_max_records = pubchem_max_records
         self.engine = get_engine(db_url)
         ensure_schema(self.engine)
         if max_records is not None:
@@ -35,6 +37,19 @@ class DatabaseBuilder:
                 'this is NOT a complete build',
                 max_records,
             )
+        if pubchem_max_records is not None:
+            _log.warning(
+                'pubchem_max_records=%d: only the PubChem table is capped; '
+                'all other resources load in full',
+                pubchem_max_records,
+            )
+
+    def _effective_limit(self, backend_name: str) -> int | None:
+        """Row cap for a backend: PubChem honours its own cap when set,
+        every other backend uses the global ``max_records`` (if any)."""
+        if backend_name == 'pubchem' and self._pubchem_max_records is not None:
+            return self._pubchem_max_records
+        return self._max_records
 
     def create_tables(self):
         """Create all tables."""
@@ -78,6 +93,12 @@ class DatabaseBuilder:
             'uniprot_ftp',
             'metanetx',
             'bigg',
+            # Structure-bearing backends (inputs_v2 adapter + PubChem)
+            'chebi',
+            'chembl',
+            'lipidmaps',
+            'swisslipids',
+            'pubchem',
         ]
 
         with Session(self.engine) as session:
@@ -165,9 +186,10 @@ class DatabaseBuilder:
         # Load mapping data via the existing reader. For inputs_v2 backends
         # the limit is honoured at load time (via islice); other backends
         # ignore the unknown kwarg and are capped at COPY time below.
+        limit = self._effective_limit(backend_name)
         reader_params = {}
-        if self._max_records is not None:
-            reader_params['limit'] = self._max_records
+        if limit is not None:
+            reader_params['limit'] = limit
         reader = MapReader(
             id_type=id_type,
             target_id_type=target_id_type,
@@ -221,10 +243,7 @@ class DatabaseBuilder:
                             )
                         )
                         row_count += 1
-                    if (
-                        self._max_records is not None
-                        and row_count >= self._max_records
-                    ):
+                    if limit is not None and row_count >= limit:
                         break
 
         conn.commit()
@@ -671,6 +690,7 @@ class DatabaseBuilder:
         self._populate_ramp()
         self._populate_metanetx()
         self._populate_bigg()
+        self._populate_structures()
 
     # ------------------------------------------------------------------
     # UniChem auto-discovery
@@ -1241,4 +1261,39 @@ class DatabaseBuilder:
             except Exception as e:
                 _log.warning(
                     "BiGG %s -> %s failed: %s", src, tgt, e,
+                )
+
+    # ------------------------------------------------------------------
+    # Structure-bearing namespaces (inputs_v2 adapter backends + PubChem)
+    # ------------------------------------------------------------------
+
+    # Each (source_namespace, backend) maps the namespace's own ID to the
+    # Standard InChIKey -- the chemical resolver's canonical target (see
+    # resolver_policy.yaml). InChIKey is the only structure id that fits the
+    # 64-char id_mapping column (InChI/SMILES are kept in the metabo layer,
+    # not here). Organism-agnostic (ncbi_tax_id=0).
+    _STRUCTURE_BACKENDS = [
+        "chebi",
+        "chembl",
+        "lipidmaps",
+        "swisslipids",
+        "pubchem",
+    ]
+
+    def _populate_structures(self):
+        """Build namespace -> Standard InChIKey mappings via the structure
+        backends (ChEBI, ChEMBL, LIPID MAPS, SwissLipids, PubChem).
+
+        These feed the chemical resolver's canonical InChIKey projection.
+        PubChem is the largest by far and honours ``--pubchem-max-records``.
+        """
+
+        _log.info("Building structure-bearing (-> InChIKey) mappings...")
+
+        for backend in self._STRUCTURE_BACKENDS:
+            try:
+                self.populate_mapping(backend, "inchikey", 0, backend)
+            except Exception as e:
+                _log.warning(
+                    "%s -> inchikey failed: %s", backend, e,
                 )
