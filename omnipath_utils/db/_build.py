@@ -20,10 +20,21 @@ _log = logging.getLogger(__name__)
 class DatabaseBuilder:
     """Orchestrates building the omnipath_utils database."""
 
-    def __init__(self, db_url: str | None = None):
+    def __init__(
+        self,
+        db_url: str | None = None,
+        max_records: int | None = None,
+    ):
         self._db_url = db_url
+        self._max_records = max_records
         self.engine = get_engine(db_url)
         ensure_schema(self.engine)
+        if max_records is not None:
+            _log.warning(
+                'max_records=%d: mapping tables are CAPPED for testing; '
+                'this is NOT a complete build',
+                max_records,
+            )
 
     def create_tables(self):
         """Create all tables."""
@@ -151,12 +162,18 @@ class DatabaseBuilder:
             tgt_type_id = tgt_type.id
             backend_id = backend.id
 
-        # Load mapping data via the existing reader
+        # Load mapping data via the existing reader. For inputs_v2 backends
+        # the limit is honoured at load time (via islice); other backends
+        # ignore the unknown kwarg and are capped at COPY time below.
+        reader_params = {}
+        if self._max_records is not None:
+            reader_params['limit'] = self._max_records
         reader = MapReader(
             id_type=id_type,
             target_id_type=target_id_type,
             ncbi_tax_id=ncbi_tax_id,
             backend=backend_name,
+            **reader_params,
         )
         data = reader.load()
 
@@ -204,6 +221,11 @@ class DatabaseBuilder:
                             )
                         )
                         row_count += 1
+                    if (
+                        self._max_records is not None
+                        and row_count >= self._max_records
+                    ):
+                        break
 
         conn.commit()
         conn.close()
@@ -271,6 +293,8 @@ class DatabaseBuilder:
             ('trembl', all_trembls),
         ]:
             ids = loader(ncbi_tax_id)
+            if self._max_records is not None:
+                ids = set(list(ids)[: self._max_records])
             _log.info(
                 'Loading %d %s IDs for organism %d',
                 len(ids),
@@ -489,6 +513,16 @@ class DatabaseBuilder:
                         mapping_count // 1_000_000,
                         taxid_count,
                     )
+
+                if (
+                    self._max_records is not None
+                    and mapping_count >= self._max_records
+                ):
+                    _log.warning(
+                        'max_records=%d reached; stopping FTP stream early',
+                        self._max_records,
+                    )
+                    break
 
         conn.commit()
         taxid_file.close()
@@ -761,6 +795,11 @@ class DatabaseBuilder:
                                         backend_id,
                                     ))
                                     row_count += 1
+                                if (
+                                    self._max_records is not None
+                                    and row_count >= self._max_records
+                                ):
+                                    break
 
                     conn.commit()
                     conn.close()
@@ -940,6 +979,11 @@ class DatabaseBuilder:
                                         backend_id,
                                     ))
                                     row_count += 1
+                                if (
+                                    self._max_records is not None
+                                    and row_count >= self._max_records
+                                ):
+                                    break
 
                     conn.commit()
                     conn.close()

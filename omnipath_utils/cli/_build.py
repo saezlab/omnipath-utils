@@ -47,6 +47,16 @@ def build_cmd(args: list[str]):
         action='store_true',
         help='List available presets and exit',
     )
+    parser.add_argument(
+        '--max-records',
+        type=int,
+        default=None,
+        help=(
+            'Cap each mapping table at this many rows (for fast test builds). '
+            'Applied at load time for inputs_v2 backends and as a write cap '
+            'for all others. Default: no limit (full build).'
+        ),
+    )
     parser.add_argument('-v', '--verbose', action='store_true')
 
     opts = parser.parse_args(args)
@@ -73,7 +83,7 @@ def build_cmd(args: list[str]):
 
     from omnipath_utils.db._build import DatabaseBuilder
 
-    builder = DatabaseBuilder(db_url=opts.db_url)
+    builder = DatabaseBuilder(db_url=opts.db_url, max_records=opts.max_records)
 
     if opts.preset:
         builder.build_preset(opts.preset, parquet_dir=opts.parquet_dir)
