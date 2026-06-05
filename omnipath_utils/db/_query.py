@@ -101,24 +101,26 @@ def translate_ids(
     source_type: str,
     target_type: str,
     ncbi_tax_id: int,
-    use_ftp: str = 'fallback',
+    full_uniprot: str = 'fallback',
 ) -> tuple[dict[str, set[str]], set[str]]:
     """Translate IDs via the database.
 
-    Queries the curated ``id_mapping`` first and, per ``use_ftp``, the
-    comprehensive ``id_mapping_ftp`` (full UniProt FTP, all organisms). Results
-    are deduplicated (set union).
+    Queries the curated ``id_mapping`` first and, per ``full_uniprot``, the
+    comprehensive full-UniProt table ``id_mapping_ftp`` (the complete UniProt
+    idmapping, all organisms). Results are deduplicated (set union).
 
     Args:
         session: SQLAlchemy session.
         identifiers: Source IDs to translate, or ``None`` for the full table.
         source_type / target_type: ID type names.
         ncbi_tax_id: NCBI Taxonomy ID.
-        use_ftp: ``'fallback'`` (default — curated, then the FTP table only for
+        full_uniprot: How to use the comprehensive full-UniProt table:
+            ``'fallback'`` (default — curated, then full-UniProt only for
             still-unresolved identifiers), ``'never'`` (curated only),
-            ``'both'`` (curated + FTP), ``'only'`` (FTP only). The full FTP table
-            is only consulted on explicit request (``both``/``only``) for a
-            whole-table query, never as a blanket fallback.
+            ``'both'`` (curated + full-UniProt), ``'only'`` (full-UniProt only).
+            The full table is only consulted on explicit request
+            (``both``/``only``) for a whole-table query, never as a blanket
+            fallback.
 
     Returns:
         Tuple of (results dict, set of backend names used).
@@ -128,7 +130,7 @@ def translate_ids(
         from omnipath_utils.mapping._special import normalise_hmdb
         identifiers = [normalise_hmdb(i) for i in identifiers]
 
-    if use_ftp == 'only':
+    if full_uniprot == 'only':
         result, backends_used = defaultdict(set), set()
     else:
         result, backends_used = _query_table(
@@ -136,10 +138,10 @@ def translate_ids(
             identifiers, source_type, target_type, ncbi_tax_id,
         )
 
-    # Decide whether (and for which identifiers) to consult the FTP table.
+    # Decide whether (and for which identifiers) to consult the full table.
     ftp_ids = identifiers
-    want_ftp = use_ftp in ('both', 'only')
-    if use_ftp == 'fallback' and identifiers is not None:
+    want_ftp = full_uniprot in ('both', 'only')
+    if full_uniprot == 'fallback' and identifiers is not None:
         missing = [i for i in identifiers if i not in result]
         if missing:
             want_ftp = True
