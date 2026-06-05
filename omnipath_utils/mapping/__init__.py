@@ -121,6 +121,7 @@ def map_name0(
     ncbi_tax_id: int | None = None,
     raw: bool = False,
     backend: str | None = None,
+    full_uniprot: str = 'fallback',
 ) -> str | None:
     """Translate, returning a single result.
 
@@ -131,6 +132,8 @@ def map_name0(
         ncbi_tax_id: Organism (default: 9606).
         raw: Skip special-case handling.
         backend: Force a specific backend.
+        full_uniprot: Use of the comprehensive full-UniProt table (DB mode):
+            ``'fallback'`` (default), ``'never'``, ``'both'``, ``'only'``.
 
     Returns:
         A single target identifier, or None.
@@ -143,6 +146,7 @@ def map_name0(
         ncbi_tax_id,
         raw=raw,
         backend=backend,
+        full_uniprot=full_uniprot,
     )
     return next(iter(result)) if result else None
 
@@ -243,6 +247,7 @@ def translate_column(
     expand: bool = True,
     raw: bool = False,
     backend: str | None = None,
+    full_uniprot: str = 'fallback',
 ) -> Any:
     """Translate a column of identifiers in a DataFrame.
 
@@ -287,6 +292,7 @@ def translate_column(
         ncbi_tax_id,
         raw=raw,
         backend=backend,
+        full_uniprot=full_uniprot,
     )
 
     if expand:
@@ -367,6 +373,7 @@ def translate_columns(
     expand: bool = True,
     raw: bool = False,
     backend: str | None = None,
+    full_uniprot: str = 'fallback',
 ) -> Any:
     """Translate multiple columns in a DataFrame.
 
@@ -409,6 +416,7 @@ def translate_columns(
             expand=expand,
             raw=raw,
             backend=backend,
+            full_uniprot=full_uniprot,
         )
 
     return df
