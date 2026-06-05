@@ -65,6 +65,15 @@ class TestHealthEndpoint:
         assert 'backends' in data  # empty list when schema unavailable
         assert 'builds' in data
 
+    def test_health_id_mapping_ftp_graceful(self, client):
+        # The id_mapping_ftp stat uses Postgres-only reltuples/to_regclass; on
+        # the SQLite test DB the guard must skip it without breaking /health.
+        resp = client.get('/health')
+        assert resp.status_code == 200
+        stats = resp.json()['stats']
+        assert 'id_mapping' in stats          # curated table is counted
+        assert 'id_mapping_ftp' not in stats  # absent -> gracefully skipped
+
 
 class TestTaxonomyEndpoints:
     def test_resolve_human(self, client):
