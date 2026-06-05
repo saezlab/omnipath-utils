@@ -13,39 +13,36 @@ from omnipath_utils.db._connection import SCHEMA
 _log = logging.getLogger(__name__)
 
 
-def translate_ids(
+_FTP_TABLE = 'id_mapping_ftp'
+_ftp_exists_cache: dict = {}
+
+
+def _ftp_table_exists(session: Session) -> bool:
+    """Whether the comprehensive FTP table is present (cached per process)."""
+    if 'v' not in _ftp_exists_cache:
+        present = session.execute(
+            text(f"SELECT to_regclass('{SCHEMA}.{_FTP_TABLE}')")
+        ).scalar()
+        _ftp_exists_cache['v'] = present is not None
+    return _ftp_exists_cache['v']
+
+
+def _query_table(
     session: Session,
+    table: str,
     identifiers: list[str] | None,
     source_type: str,
     target_type: str,
     ncbi_tax_id: int,
-) -> tuple[dict[str, set[str]], set[str]]:
-    """Translate IDs via the database.
-
-    Args:
-        session: SQLAlchemy session.
-        identifiers: Source IDs to translate, or ``None`` for the full table.
-        source_type: Source ID type name.
-        target_type: Target ID type name.
-        ncbi_tax_id: NCBI Taxonomy ID.
-
-    Returns:
-        Tuple of (results dict, set of backend names used).
-    """
+) -> tuple[defaultdict, set]:
+    """Forward + reverse-for-missing lookup against a single mapping table."""
     result = defaultdict(set)
     backends_used = set()
-
     params: dict = {
         'src_type': source_type,
         'tgt_type': target_type,
         'tax': ncbi_tax_id,
     }
-
-
-    # Normalise HMDB IDs (old 5-digit → 7-digit format)
-    if source_type == "hmdb" and identifiers is not None:
-        from omnipath_utils.mapping._special import normalise_hmdb
-        identifiers = [normalise_hmdb(i) for i in identifiers]
     id_filter = ''
     if identifiers is not None:
         id_filter = 'AND m.source_id = ANY(:ids)'
@@ -54,7 +51,7 @@ def translate_ids(
     rows = session.execute(
         text(f"""
             SELECT m.source_id, m.target_id, b.name
-            FROM {SCHEMA}.id_mapping m
+            FROM {table} m
             JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
             JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
             JOIN {SCHEMA}.backend b ON m.backend_id = b.id
@@ -65,19 +62,17 @@ def translate_ids(
         """),
         params,
     )
-
     for row in rows:
         result[row[0]].add(row[1])
         backends_used.add(row[2])
 
-    # Reverse lookup only when querying specific identifiers
     if identifiers is not None:
         missing = [i for i in identifiers if i not in result]
         if missing:
             rev_rows = session.execute(
                 text(f"""
                     SELECT m.target_id, m.source_id, b.name
-                    FROM {SCHEMA}.id_mapping m
+                    FROM {table} m
                     JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
                     JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
                     JOIN {SCHEMA}.backend b ON m.backend_id = b.id
@@ -93,10 +88,71 @@ def translate_ids(
                     'ids': missing,
                 },
             )
-
             for row in rev_rows:
                 result[row[0]].add(row[1])
                 backends_used.add(f'{row[2]}(rev)')
+
+    return result, backends_used
+
+
+def translate_ids(
+    session: Session,
+    identifiers: list[str] | None,
+    source_type: str,
+    target_type: str,
+    ncbi_tax_id: int,
+    use_ftp: str = 'fallback',
+) -> tuple[dict[str, set[str]], set[str]]:
+    """Translate IDs via the database.
+
+    Queries the curated ``id_mapping`` first and, per ``use_ftp``, the
+    comprehensive ``id_mapping_ftp`` (full UniProt FTP, all organisms). Results
+    are deduplicated (set union).
+
+    Args:
+        session: SQLAlchemy session.
+        identifiers: Source IDs to translate, or ``None`` for the full table.
+        source_type / target_type: ID type names.
+        ncbi_tax_id: NCBI Taxonomy ID.
+        use_ftp: ``'fallback'`` (default — curated, then the FTP table only for
+            still-unresolved identifiers), ``'never'`` (curated only),
+            ``'both'`` (curated + FTP), ``'only'`` (FTP only). The full FTP table
+            is only consulted on explicit request (``both``/``only``) for a
+            whole-table query, never as a blanket fallback.
+
+    Returns:
+        Tuple of (results dict, set of backend names used).
+    """
+    # Normalise HMDB IDs (old 5-digit → 7-digit format)
+    if source_type == "hmdb" and identifiers is not None:
+        from omnipath_utils.mapping._special import normalise_hmdb
+        identifiers = [normalise_hmdb(i) for i in identifiers]
+
+    if use_ftp == 'only':
+        result, backends_used = defaultdict(set), set()
+    else:
+        result, backends_used = _query_table(
+            session, f'{SCHEMA}.id_mapping',
+            identifiers, source_type, target_type, ncbi_tax_id,
+        )
+
+    # Decide whether (and for which identifiers) to consult the FTP table.
+    ftp_ids = identifiers
+    want_ftp = use_ftp in ('both', 'only')
+    if use_ftp == 'fallback' and identifiers is not None:
+        missing = [i for i in identifiers if i not in result]
+        if missing:
+            want_ftp = True
+            ftp_ids = missing
+
+    if want_ftp and _ftp_table_exists(session):
+        ftp_result, ftp_backends = _query_table(
+            session, f'{SCHEMA}.{_FTP_TABLE}',
+            ftp_ids, source_type, target_type, ncbi_tax_id,
+        )
+        for key, vals in ftp_result.items():
+            result[key] |= vals  # set union -> deduplicated
+        backends_used |= ftp_backends
 
     return dict(result), backends_used
 
