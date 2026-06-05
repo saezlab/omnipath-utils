@@ -159,6 +159,31 @@ translate(['TP53', 'EGFR', 'FAKE'], 'genesymbol', 'uniprot')
     for any identifiers that miss in the table. Use `raw=True` to
     restrict to table lookup only with no fallbacks.
 
+#### Full UniProt across all organisms -- `full_uniprot`
+
+The curated tables cover the common organisms. In **database-backed mode** a
+comprehensive table (`id_mapping_ftp`) built from the complete UniProt idmapping —
+**all organisms, ~1 billion rows** — is also available. The `full_uniprot` argument
+(on `map_name`, `map_names`, `translate`, and the `/mapping/translate` endpoint)
+controls how it is used:
+
+| value | behaviour |
+|-------|-----------|
+| `'fallback'` (default) | curated table first; the full table is consulted **only for identifiers the curated table did not resolve** |
+| `'never'` | curated only |
+| `'both'` | query both and merge (deduplicated) |
+| `'only'` | the full table only |
+
+```python
+# EGFR in chimpanzee (9598): absent from the curated tables, resolved from the full table
+map_name('EGFR', 'genesymbol', 'uniprot', ncbi_tax_id=9598)                     # resolves
+map_name('EGFR', 'genesymbol', 'uniprot', ncbi_tax_id=9598, full_uniprot='never')  # empty
+```
+
+The `id_mapping_ftp` row count is reported by the `/health` endpoint. The default
+(`fallback`) keeps the common case fast on the small curated table and only touches
+the billion-row table when needed.
+
 #### `translation_table` -- full mapping table
 
 ```python
