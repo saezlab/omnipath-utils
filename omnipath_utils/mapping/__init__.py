@@ -38,6 +38,7 @@ def map_name(
     strict: bool = False,
     raw: bool = False,
     backend: str | None = None,
+    full_uniprot: str = 'fallback',
 ) -> set[str]:
     """Translate a single identifier.
 
@@ -49,6 +50,8 @@ def map_name(
         strict: Skip fuzzy fallbacks (gene symbol case, append "1", etc.).
         raw: Skip special-case handling. Direct table lookup only.
         backend: Force a specific backend (e.g. 'uniprot', 'biomart').
+        full_uniprot: Use of the comprehensive full-UniProt table (DB mode):
+            ``'fallback'`` (default), ``'never'``, ``'both'``, ``'only'``.
 
     Returns:
         Set of target identifiers.
@@ -64,6 +67,7 @@ def map_name(
         strict=strict,
         raw=raw,
         backend=backend,
+        full_uniprot=full_uniprot,
     )
     return result.get(name, set())
 
@@ -75,6 +79,7 @@ def map_names(
     ncbi_tax_id: int | None = None,
     raw: bool = False,
     backend: str | None = None,
+    full_uniprot: str = 'fallback',
 ) -> set[str]:
     """Translate multiple identifiers, return union of results.
 
@@ -85,6 +90,8 @@ def map_names(
         ncbi_tax_id: Organism (default: 9606).
         raw: Skip special-case handling. Direct table lookup only.
         backend: Force a specific backend.
+        full_uniprot: Use of the comprehensive full-UniProt table (DB mode):
+            ``'fallback'`` (default), ``'never'``, ``'both'``, ``'only'``.
 
     Returns:
         Union of all target identifiers.
@@ -99,6 +106,7 @@ def map_names(
         ncbi_tax_id,
         raw=raw,
         backend=backend,
+        full_uniprot=full_uniprot,
     )
     merged = set()
     for targets in result.values():
@@ -146,6 +154,7 @@ def translate(
     ncbi_tax_id: int | None = None,
     raw: bool = False,
     backend: str | None = None,
+    full_uniprot: str = 'fallback',
 ) -> dict[str, set[str]]:
     """Batch translate. Returns dict mapping source -> set of targets.
 
@@ -160,6 +169,8 @@ def translate(
         ncbi_tax_id: Organism (default: 9606).
         raw: Skip special-case handling. Direct table lookup only.
         backend: Force a specific backend.
+        full_uniprot: Use of the comprehensive full-UniProt table (DB mode):
+            ``'fallback'`` (default), ``'never'``, ``'both'``, ``'only'``.
 
     Returns:
         Dict mapping each source ID to a set of target IDs.
@@ -173,6 +184,7 @@ def translate(
         target_id_type,
         ncbi_tax_id,
         raw=raw,
+        full_uniprot=full_uniprot,
         backend=backend,
     )
 

@@ -112,6 +112,20 @@ async def health_check(session: Session) -> dict:
     except Exception as e:
         db_status = f'error: {e}'
 
+    # Comprehensive full-UniProt table (present only after an FTP load). Use the
+    # planner's row estimate (instant) -- an exact count(*) on ~1B rows is slow.
+    try:
+        ftp_rows = session.execute(
+            text(
+                "SELECT reltuples::bigint FROM pg_class "
+                f"WHERE oid = to_regclass('{SCHEMA}.id_mapping_ftp')"
+            )
+        ).scalar()
+        if ftp_rows is not None:
+            stats['id_mapping_ftp'] = ftp_rows  # estimated (post-ANALYZE)
+    except Exception:
+        pass
+
     try:
         rows = session.execute(
             text(f'SELECT name FROM {SCHEMA}.backend ORDER BY name')

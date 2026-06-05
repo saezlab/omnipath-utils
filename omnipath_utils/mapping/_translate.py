@@ -39,7 +39,7 @@ def _get_db_session():
 
 def _translate_via_db(
     identifiers, id_type, target_id_type, ncbi_tax_id,
-    raw=False, uniprot_cleanup=True,
+    raw=False, uniprot_cleanup=True, full_uniprot='fallback',
 ):
     """Translate via PostgreSQL if available. Returns None if DB not configured."""
     session = _get_db_session()
@@ -47,7 +47,10 @@ def _translate_via_db(
         return None
     try:
         from omnipath_utils.db._query import translate_ids
-        result, _backends = translate_ids(session, identifiers, id_type, target_id_type, ncbi_tax_id)
+        result, _backends = translate_ids(
+            session, identifiers, id_type, target_id_type, ncbi_tax_id,
+            full_uniprot=full_uniprot,
+        )
         if not raw and target_id_type == "uniprot" and uniprot_cleanup:
             from omnipath_utils.mapping._cleanup import uniprot_cleanup_batch
             result = uniprot_cleanup_batch(result, ncbi_tax_id, session=session)
@@ -68,6 +71,7 @@ def translate_core(
     raw: bool = False,
     backend: str | None = None,
     uniprot_cleanup: bool = True,
+    full_uniprot: str = 'fallback',
 ) -> dict[str, set[str]]:
     """Unified translation with fallback chain.
 
@@ -83,6 +87,8 @@ def translate_core(
         raw: Skip ALL special-case handling. Direct table lookup only.
         backend: Force a specific backend. None = auto-select.
         uniprot_cleanup: Apply UniProt cleanup when target is uniprot.
+        full_uniprot: Use of the comprehensive full-UniProt table (DB mode):
+            ``'fallback'`` (default), ``'never'``, ``'both'``, ``'only'``.
 
     Returns:
         Dict mapping each source ID to a set of target IDs.
@@ -90,7 +96,7 @@ def translate_core(
     # Try DB mode first (fast SQL queries)
     db_result = _translate_via_db(
         identifiers, id_type, target_id_type, ncbi_tax_id,
-        raw=raw, uniprot_cleanup=uniprot_cleanup,
+        raw=raw, uniprot_cleanup=uniprot_cleanup, full_uniprot=full_uniprot,
     )
     if db_result is not None:
         return db_result

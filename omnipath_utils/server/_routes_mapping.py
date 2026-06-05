@@ -271,6 +271,14 @@ class MappingController(Controller):
             required=False,
             description='Force specific backend',
         ),
+        full_uniprot: str = Parameter(
+            default='fallback',
+            description=(
+                'Use of the comprehensive full-UniProt table (all organisms): '
+                "'fallback' (default — curated first, full-UniProt only for "
+                "unresolved IDs), 'never', 'both', 'only'."
+            ),
+        ),
     ) -> dict:
         """Translate identifiers from one type to another.
 
@@ -281,6 +289,7 @@ class MappingController(Controller):
             ncbi_tax_id: NCBI Taxonomy ID.
             raw: Skip special-case handling.
             backend: Force specific backend (ignored for DB mode).
+            full_uniprot: How to use the comprehensive full-UniProt table.
         """
 
         from omnipath_utils.mapping._id_types import IdTypeRegistry
@@ -297,6 +306,7 @@ class MappingController(Controller):
             id_type_resolved,
             target_resolved,
             ncbi_tax_id,
+            full_uniprot=full_uniprot,
         )
 
         # If no results from DB, trigger background load
