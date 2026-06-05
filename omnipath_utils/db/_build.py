@@ -51,6 +51,45 @@ class DatabaseBuilder:
             return self._pubchem_max_records
         return self._max_records
 
+    def _run_mappings_parallel(self, pairs, organisms):
+        """Run independent ``populate_mapping`` calls across a thread pool.
+
+        Each ``(source, target, organism, backend)`` combination writes a
+        disjoint slice of ``id_mapping`` and opens its own connection, so the
+        jobs are safe to run concurrently. Worker count is controlled by
+        ``OMNIPATH_BUILD_MAPPING_WORKERS`` (default 8); see
+        ``omnipath-build/docs/build-tuning.md``.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        jobs = [
+            (src, tgt, org, backend)
+            for src, tgt, backend in pairs
+            for org in organisms
+        ]
+        if not jobs:
+            return
+
+        workers = int(os.environ.get('OMNIPATH_BUILD_MAPPING_WORKERS', '8'))
+        workers = max(1, min(workers, len(jobs)))
+        _log.info(
+            'Building %d mapping tables with %d parallel workers',
+            len(jobs),
+            workers,
+        )
+
+        def _one(job):
+            src, tgt, org, backend = job
+            try:
+                self.populate_mapping(src, tgt, org, backend)
+            except Exception as e:
+                _log.error(
+                    'Failed: %s -> %s (org %d): %s', src, tgt, org, e,
+                )
+
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            list(ex.map(_one, jobs))
+
     def create_tables(self):
         """Create all tables."""
         Base.metadata.create_all(self.engine)
@@ -384,14 +423,7 @@ class DatabaseBuilder:
 
         organisms = organisms or [9606]  # default: human only
 
-        for src, tgt, backend in PROTEIN_CORE + ENSEMBL:
-            for org in organisms:
-                try:
-                    self.populate_mapping(src, tgt, org, backend)
-                except Exception as e:
-                    _log.error(
-                        'Failed: %s -> %s (org %d): %s', src, tgt, org, e
-                    )
+        self._run_mappings_parallel(PROTEIN_CORE + ENSEMBL, organisms)
 
         # Reference lists
         for org in organisms:
@@ -400,23 +432,62 @@ class DatabaseBuilder:
             except Exception as e:
                 _log.error('Failed reflists for org %d: %s', org, e)
 
+    # FTP idmapping labels NOT loaded by default (annotation/clustering, not ID
+    # translation; they 10x the table). Opt in via OMNIPATH_BUILD_FTP_HEAVY_TYPES.
+    _FTP_HEAVY_LABELS = {'GO', 'UniRef100', 'UniRef90', 'UniRef50', 'PDB', 'STRING'}
+
+    def _pg_set(self, cur):
+        """Apply session-level (not global) tuning for the in-DB transform."""
+        gucs = {
+            'work_mem': os.environ.get('OMNIPATH_BUILD_WORK_MEM', '1GB'),
+            'maintenance_work_mem': os.environ.get(
+                'OMNIPATH_BUILD_MAINTENANCE_WORK_MEM', '2GB'
+            ),
+            'max_parallel_workers_per_gather': os.environ.get(
+                'OMNIPATH_BUILD_MAX_PARALLEL_WORKERS_PER_GATHER', '8'
+            ),
+            'max_parallel_maintenance_workers': os.environ.get(
+                'OMNIPATH_BUILD_MAX_PARALLEL_MAINTENANCE_WORKERS', '4'
+            ),
+            'synchronous_commit': 'off',
+        }
+        for k, v in gucs.items():
+            # SET does not accept bound parameters; values are operator-controlled
+            # env/defaults. Quote as a string literal (PG coerces ints/sizes).
+            safe = str(v).replace("'", "")
+            cur.execute(f"SET {k} = '{safe}'")
+
     def populate_from_ftp(self, id_types: set[str] | None = None):
-        """Populate id_mapping table from the full UniProt FTP idmapping file.
+        """Load the full UniProt FTP idmapping into a swappable ``id_mapping_ftp``.
 
-        This processes the complete ~18GB idmapping.dat.gz in a single pass,
-        streaming directly into PostgreSQL via COPY.
+        The complete ``idmapping.dat.gz`` (~18 GB, all organisms incl. the long
+        tail with no per-organism file) is loaded by **streaming it into a staging
+        table and transforming in-database** — no per-row Python, no awk/split:
 
-        Strategy:
-        1. Stream all records, insert mappings with ncbi_tax_id=0
-        2. Collect NCBI_TaxID rows in a temp table
-        3. UPDATE id_mapping.ncbi_tax_id from the temp table
+        1. ``pypath.inputs.uniprot_ftp.stream_full_idmapping`` downloads (dlmachine,
+           cached) and streams the **decompressed** bytes; the build client pipes
+           them straight into a client-side ``COPY … FROM STDIN`` of the raw
+           ``(ac, id_type_label, id_value)`` rows into an UNLOGGED staging table
+           (portable: the DB server needs no file access).
+        2. In-DB, set-based: build ``ac → taxid`` from the ``NCBI_TaxID`` rows and a
+           ``id_type_label → id_type_id`` map (synonyms included), then build the
+           new table resolving ``id_type`` and ``ncbi_tax_id`` as **foreign keys**.
+        3. Build its indexes **offline**, then **atomically swap** it in
+           (``id_mapping_ftp``) behind the ``id_mapping_all`` view — the curated
+           ``id_mapping`` keeps serving with full indexes throughout.
+
+        Heavy non-translation labels (GO/UniRef/PDB/STRING) are excluded unless
+        ``OMNIPATH_BUILD_FTP_HEAVY_TYPES=1``. Session tuning via ``OMNIPATH_BUILD_*``
+        (see ``omnipath-build/docs/build-tuning.md``).
         """
         from omnipath_utils.db._connection import SCHEMA, get_connection
+        from pypath.inputs.uniprot_ftp import IDTYPE_MAP, stream_full_idmapping
 
-        _log.info('Starting full FTP idmapping build')
+        _log.info('Starting full FTP idmapping build (staging + in-DB transform)')
         start = time.time()
 
-        # Get or create the backend ID for 'uniprot_ftp'
+        # Backend id + uniprot source type id + label -> id_type_id map.
+        load_heavy = os.environ.get('OMNIPATH_BUILD_FTP_HEAVY_TYPES') == '1'
         with Session(self.engine) as session:
             backend = (
                 session.query(Backend).filter_by(name='uniprot_ftp').first()
@@ -425,23 +496,6 @@ class DatabaseBuilder:
                 _log.error('Backend uniprot_ftp not found in database')
                 return
             backend_id = backend.id
-
-        # We need type IDs for each FTP ID type name
-        # Build a mapping from FTP type names to our id_type table IDs
-        from pypath.inputs.uniprot_ftp import IDTYPE_MAP, idmapping_full_stream
-
-        with Session(self.engine) as session:
-            type_name_to_id = {}
-            for ftp_name, canonical_name in IDTYPE_MAP.items():
-                if canonical_name.startswith('_'):  # skip _taxid etc
-                    continue
-                id_type = (
-                    session.query(IdType).filter_by(name=canonical_name).first()
-                )
-                if id_type:
-                    type_name_to_id[ftp_name] = id_type.id
-
-            # We also need the 'uniprot' type ID (source side is always uniprot AC)
             uniprot_type = (
                 session.query(IdType).filter_by(name='uniprot').first()
             )
@@ -450,180 +504,146 @@ class DatabaseBuilder:
                 return
             uniprot_type_id = uniprot_type.id
 
-        _log.info(
-            'Mapped %d FTP ID types to database IDs', len(type_name_to_id)
-        )
-
-        # Connect raw psycopg for COPY
-        conn = get_connection(self._db_url)
-        cur = conn.cursor()
-
-        # Create temp table for taxonomy
-        cur.execute(
-            'CREATE TEMP TABLE IF NOT EXISTS ac_taxid '
-            '(ac VARCHAR(16) PRIMARY KEY, taxid INTEGER)'
-        )
-        cur.execute('TRUNCATE ac_taxid')
-        conn.commit()
-
-        # Delete existing FTP-loaded data
-        cur.execute(
-            f'DELETE FROM {SCHEMA}.id_mapping WHERE backend_id = %s',
-            (backend_id,),
-        )
-        conn.commit()
-        _log.info('Cleared existing FTP data')
-
-        # Stream and insert
-        mapping_count = 0
-        taxid_count = 0
-
-        # Taxid assignments are written to a temp file during streaming
-        # (to avoid holding ~250M entries in memory), then loaded into
-        # the temp table in batches after the main COPY finishes.
-        import tempfile
-
-        taxid_file = tempfile.NamedTemporaryFile(
-            mode='w',
-            suffix='.tsv',
-            delete=False,
-            prefix='taxids_',
-        )
-
-        # Start COPY for id_mapping
-        ftp_types = set(type_name_to_id.keys())
-        ftp_types.add('NCBI_TaxID')  # always collect taxids
-
-        with cur.copy(
-            f'COPY {SCHEMA}.id_mapping '
-            '(source_type_id, target_type_id, ncbi_tax_id, '
-            'source_id, target_id, backend_id) FROM STDIN'
-        ) as copy:
-            for uniprot_ac, id_type_name, id_value in idmapping_full_stream(
-                id_types=ftp_types
-            ):
-                if id_type_name == 'NCBI_TaxID':
-                    try:
-                        taxid_file.write(f'{uniprot_ac}\t{int(id_value)}\n')
-                        taxid_count += 1
-                    except ValueError:
-                        pass
+            label_to_id = {}
+            for ftp_label, canonical_name in IDTYPE_MAP.items():
+                if canonical_name.startswith('_'):  # _taxid handled separately
                     continue
-
-                target_type_id = type_name_to_id.get(id_type_name)
-                if not target_type_id:
+                if ftp_label in self._FTP_HEAVY_LABELS and not load_heavy:
                     continue
-
-                copy.write_row(
-                    (
-                        uniprot_type_id,
-                        target_type_id,
-                        0,  # ncbi_tax_id filled in later
-                        uniprot_ac[:64],
-                        id_value[:64],
-                        backend_id,
-                    )
+                id_type = (
+                    session.query(IdType).filter_by(name=canonical_name).first()
                 )
-                mapping_count += 1
-
-                if mapping_count % 10_000_000 == 0:
-                    _log.info(
-                        'Inserted %dM mapping rows, %d taxids written',
-                        mapping_count // 1_000_000,
-                        taxid_count,
-                    )
-
-                if (
-                    self._max_records is not None
-                    and mapping_count >= self._max_records
-                ):
-                    _log.warning(
-                        'max_records=%d reached; stopping FTP stream early',
-                        self._max_records,
-                    )
-                    break
-
-        conn.commit()
-        taxid_file.close()
+                if id_type:
+                    label_to_id[ftp_label] = id_type.id
         _log.info(
-            'Inserted %d mapping rows, %d taxids to temp file',
-            mapping_count,
-            taxid_count,
+            'FTP label map: %d ID-type labels (heavy types %s)',
+            len(label_to_id),
+            'included' if load_heavy else 'excluded',
         )
 
-        # Load taxids from temp file into temp table in batches
-        _log.info('Loading taxids from %s', taxid_file.name)
-        batch = []
-        BATCH_SIZE = 1_000_000
-        loaded = 0
+        stg = 'idmapping_staging'
+        tax = 'idmapping_ac_taxid'
+        lmap = 'idmapping_label_map'
+        new = f'{SCHEMA}.id_mapping_ftp_new'
 
-        with open(taxid_file.name) as f:
-            for line in f:
-                parts = line.rstrip('\n').split('\t')
-                if len(parts) == 2:
-                    batch.append((parts[0], int(parts[1])))
-                    if len(batch) >= BATCH_SIZE:
-                        with cur.copy(
-                            'COPY ac_taxid (ac, taxid) FROM STDIN'
-                        ) as taxid_copy:
-                            for row in batch:
-                                taxid_copy.write_row(row)
-                        conn.commit()
-                        loaded += len(batch)
-                        _log.info(
-                            'Loaded %dM / %dM taxids',
-                            loaded // 1_000_000,
-                            taxid_count // 1_000_000,
-                        )
-                        batch = []
+        conn = get_connection(self._db_url)
+        conn.autocommit = False
+        try:
+            with conn.cursor() as cur:
+                self._pg_set(cur)
 
-        # Flush remaining
-        if batch:
-            with cur.copy('COPY ac_taxid (ac, taxid) FROM STDIN') as taxid_copy:
-                for row in batch:
-                    taxid_copy.write_row(row)
-            conn.commit()
-            loaded += len(batch)
+                # 1. Stream decompressed file -> raw COPY into UNLOGGED staging.
+                cur.execute(f'DROP TABLE IF EXISTS {stg}')
+                cur.execute(
+                    f'CREATE UNLOGGED TABLE {stg} '
+                    '(ac text, id_type_label text, id_value text)'
+                )
+                _log.info('Streaming idmapping into staging via COPY...')
+                with cur.copy(
+                    f'COPY {stg} (ac, id_type_label, id_value) FROM STDIN'
+                ) as copy:
+                    for block in stream_full_idmapping():
+                        copy.write(block)
+                conn.commit()
+                cur.execute(f'SELECT count(*) FROM {stg}')
+                staged = cur.fetchone()[0]
+                _log.info('Staged %d raw idmapping rows', staged)
 
-        _log.info('Loaded all %d taxids into temp table', loaded)
-        os.unlink(taxid_file.name)
+                # 2a. label -> id_type_id map table (for the FK join).
+                cur.execute(f'DROP TABLE IF EXISTS {lmap}')
+                cur.execute(
+                    f'CREATE UNLOGGED TABLE {lmap} '
+                    '(id_type_label text PRIMARY KEY, id_type_id smallint)'
+                )
+                with cur.copy(
+                    f'COPY {lmap} (id_type_label, id_type_id) FROM STDIN'
+                ) as copy:
+                    for label, tid in label_to_id.items():
+                        copy.write_row((label, tid))
 
-        # Update ncbi_tax_id in id_mapping from the temp table
-        _log.info('Updating ncbi_tax_id for %d mapping rows...', mapping_count)
-        cur.execute(
-            f'UPDATE {SCHEMA}.id_mapping m '
-            'SET ncbi_tax_id = t.taxid '
-            'FROM ac_taxid t '
-            'WHERE m.source_id = t.ac '
-            'AND m.backend_id = %s '
-            'AND m.ncbi_tax_id = 0',
-            (backend_id,),
-        )
-        updated = cur.rowcount
-        conn.commit()
-        _log.info('Updated %d rows with organism info', updated)
+                # 2b. ac -> taxid from the NCBI_TaxID rows.
+                cur.execute(f'DROP TABLE IF EXISTS {tax}')
+                cur.execute(
+                    f'CREATE UNLOGGED TABLE {tax} AS '
+                    f"SELECT ac, id_value::int AS taxid FROM {stg} "
+                    "WHERE id_type_label = 'NCBI_TaxID' AND id_value ~ '^[0-9]+$'"
+                )
+                cur.execute(f'CREATE INDEX ON {tax} (ac)')
+                cur.execute(f'ANALYZE {tax}')
+                conn.commit()
 
-        # Clean up temp table
-        cur.execute('DROP TABLE IF EXISTS ac_taxid')
-        conn.commit()
+                # 2c. Build the new table with id_type + taxon resolved as FKs.
+                limit = (
+                    f' LIMIT {int(self._max_records)}'
+                    if self._max_records else ''
+                )
+                cur.execute(f'DROP TABLE IF EXISTS {new}')
+                cur.execute(
+                    f'CREATE TABLE {new} AS '
+                    f'SELECT {uniprot_type_id}::smallint AS source_type_id, '
+                    'lm.id_type_id::smallint AS target_type_id, '
+                    'COALESCE(t.taxid, 0)::integer AS ncbi_tax_id, '
+                    'left(s.ac, 64)::varchar(64) AS source_id, '
+                    'left(s.id_value, 64)::varchar(64) AS target_id, '
+                    f'{backend_id}::smallint AS backend_id '
+                    f'FROM {stg} s '
+                    f'JOIN {lmap} lm USING (id_type_label) '
+                    f'LEFT JOIN {tax} t USING (ac)'
+                    f'{limit}'
+                )
+                conn.commit()
+                cur.execute(f'SELECT count(*) FROM {new}')
+                mapping_count = cur.fetchone()[0]
+                _log.info('Transformed %d FTP mapping rows', mapping_count)
 
-        # ANALYZE for query planner
-        cur.execute(f'ANALYZE {SCHEMA}.id_mapping')
-        conn.commit()
+                # 3a. Build indexes offline (mirror id_mapping's secondaries).
+                cur.execute(
+                    f'CREATE INDEX ON {new} '
+                    '(source_type_id, target_type_id, ncbi_tax_id, source_id)'
+                )
+                cur.execute(
+                    f'CREATE INDEX ON {new} '
+                    '(target_type_id, source_type_id, ncbi_tax_id, target_id)'
+                )
+                cur.execute(f'ANALYZE {new}')
+                conn.commit()
+
+                # 3b. Atomic swap behind the id_mapping_all view.
+                cur.execute(f'DROP VIEW IF EXISTS {SCHEMA}.id_mapping_all')
+                cur.execute(f'DROP TABLE IF EXISTS {SCHEMA}.id_mapping_ftp')
+                cur.execute(
+                    f'ALTER TABLE {new} RENAME TO id_mapping_ftp'
+                )
+                cols = (
+                    'source_type_id, target_type_id, ncbi_tax_id, '
+                    'source_id, target_id, backend_id'
+                )
+                cur.execute(
+                    f'CREATE VIEW {SCHEMA}.id_mapping_all AS '
+                    f'SELECT {cols} FROM {SCHEMA}.id_mapping '
+                    f'UNION ALL SELECT {cols} FROM {SCHEMA}.id_mapping_ftp'
+                )
+
+                # 4. Cleanup staging.
+                for t in (stg, tax, lmap):
+                    cur.execute(f'DROP TABLE IF EXISTS {t}')
+                conn.commit()
+        except Exception:
+            conn.rollback()
+            conn.close()
+            raise
+        conn.close()
 
         duration = time.time() - start
         _log.info(
-            'Full FTP build complete: %d mappings, %d taxids, %.1f minutes',
+            'Full FTP build complete: %d mappings into id_mapping_ftp, %.1f min',
             mapping_count,
-            taxid_count,
             duration / 60,
         )
-
-        # Record in build_info
         with Session(self.engine) as session:
             session.add(
                 BuildInfo(
-                    table_name='id_mapping',
+                    table_name='id_mapping_ftp',
                     source_type='uniprot (all)',
                     target_type='all FTP types',
                     ncbi_tax_id=0,
@@ -634,8 +654,6 @@ class DatabaseBuilder:
                 )
             )
             session.commit()
-
-        conn.close()
 
     def export_parquet(self, tables: list[tuple], output_dir: str):
         """Export mapping tables as Parquet files for fast API delivery."""
@@ -1173,18 +1191,7 @@ class DatabaseBuilder:
         if config.get('ftp'):
             self.populate_from_ftp()
         else:
-            for src, tgt, backend in config['mappings']:
-                for org in organisms:
-                    try:
-                        self.populate_mapping(src, tgt, org, backend)
-                    except Exception as e:
-                        _log.error(
-                            'Failed: %s -> %s (org %d): %s',
-                            src,
-                            tgt,
-                            org,
-                            e,
-                        )
+            self._run_mappings_parallel(config['mappings'], organisms)
 
         if config.get('metabolite'):
             self.populate_metabolites()
