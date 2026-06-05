@@ -441,13 +441,19 @@ class DatabaseBuilder:
         gucs = {
             'work_mem': os.environ.get('OMNIPATH_BUILD_WORK_MEM', '1GB'),
             'maintenance_work_mem': os.environ.get(
-                'OMNIPATH_BUILD_MAINTENANCE_WORK_MEM', '2GB'
+                'OMNIPATH_BUILD_MAINTENANCE_WORK_MEM', '4GB'
             ),
             'max_parallel_workers_per_gather': os.environ.get(
                 'OMNIPATH_BUILD_MAX_PARALLEL_WORKERS_PER_GATHER', '8'
             ),
             'max_parallel_maintenance_workers': os.environ.get(
-                'OMNIPATH_BUILD_MAX_PARALLEL_MAINTENANCE_WORKERS', '4'
+                'OMNIPATH_BUILD_MAX_PARALLEL_MAINTENANCE_WORKERS', '8'
+            ),
+            # Per-worker private hashes instead of one shared hash table in
+            # /dev/shm: keeps the billion-row hash join within a modest
+            # container shm regardless of deployment.
+            'enable_parallel_hash': os.environ.get(
+                'OMNIPATH_BUILD_ENABLE_PARALLEL_HASH', 'off'
             ),
             'synchronous_commit': 'off',
         }
@@ -539,10 +545,13 @@ class DatabaseBuilder:
                     '(ac text, id_type_label text, id_value text)'
                 )
                 _log.info('Streaming idmapping into staging via COPY...')
+                # OMNIPATH_BUILD_FTP_FILE: stream a pre-staged .gz directly
+                # (skips the download-manager lookup).
+                ftp_file = os.environ.get('OMNIPATH_BUILD_FTP_FILE')
                 with cur.copy(
                     f'COPY {stg} (ac, id_type_label, id_value) FROM STDIN'
                 ) as copy:
-                    for block in stream_full_idmapping():
+                    for block in stream_full_idmapping(path=ftp_file):
                         copy.write(block)
                 conn.commit()
                 cur.execute(f'SELECT count(*) FROM {stg}')
@@ -579,7 +588,8 @@ class DatabaseBuilder:
                 )
                 cur.execute(f'DROP TABLE IF EXISTS {new}')
                 cur.execute(
-                    f'CREATE TABLE {new} AS '
+                    # UNLOGGED: skip WAL on this large rebuildable build output.
+                    f'CREATE UNLOGGED TABLE {new} AS '
                     f'SELECT {uniprot_type_id}::smallint AS source_type_id, '
                     'lm.id_type_id::smallint AS target_type_id, '
                     'COALESCE(t.taxid, 0)::integer AS ncbi_tax_id, '
@@ -596,14 +606,18 @@ class DatabaseBuilder:
                 mapping_count = cur.fetchone()[0]
                 _log.info('Transformed %d FTP mapping rows', mapping_count)
 
-                # 3a. Build indexes offline (mirror id_mapping's secondaries).
+                # 3a. Build covering indexes offline (mirror id_mapping's
+                # secondaries, + INCLUDE the payload so lookups are index-only
+                # scans on this billion-row table). Parallel (unlogged -> no WAL).
                 cur.execute(
                     f'CREATE INDEX ON {new} '
-                    '(source_type_id, target_type_id, ncbi_tax_id, source_id)'
+                    '(source_type_id, target_type_id, ncbi_tax_id, source_id) '
+                    'INCLUDE (target_id)'
                 )
                 cur.execute(
                     f'CREATE INDEX ON {new} '
-                    '(target_type_id, source_type_id, ncbi_tax_id, target_id)'
+                    '(target_type_id, source_type_id, ncbi_tax_id, target_id) '
+                    'INCLUDE (source_id)'
                 )
                 cur.execute(f'ANALYZE {new}')
                 conn.commit()
