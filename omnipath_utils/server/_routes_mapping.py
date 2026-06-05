@@ -362,6 +362,8 @@ class MappingController(Controller):
             ncbi_tax_id: NCBI Taxonomy ID (default: 9606).
             raw: Skip special-case handling (default: false).
             backend: Force specific backend (default: null).
+            full_uniprot: Use of the comprehensive full-UniProt table
+                ('fallback' (default), 'never', 'both', 'only').
         """
 
         from omnipath_utils.mapping._id_types import IdTypeRegistry
@@ -374,6 +376,7 @@ class MappingController(Controller):
         ncbi_tax_id = data.get('ncbi_tax_id', 9606)
         raw = data.get('raw', False)
         backend = data.get('backend', None)
+        full_uniprot = data.get('full_uniprot', 'fallback')
 
         id_type_resolved = reg.resolve(id_type) or id_type
         target_resolved = reg.resolve(target_id_type) or target_id_type
@@ -384,6 +387,7 @@ class MappingController(Controller):
             id_type_resolved,
             target_resolved,
             ncbi_tax_id,
+            full_uniprot=full_uniprot,
         )
 
         # If no results from DB, trigger background load
