@@ -26,6 +26,11 @@ def all_trembls(ncbi_tax_id: int = 9606) -> set[str]:
     return get_reflist('trembl', ncbi_tax_id)
 
 
+def all_swissprots_global() -> set[str]:
+    """The complete reviewed (SwissProt) AC set across all organisms."""
+    return ReferenceListManager.get().load_swissprot_global()
+
+
 def all_uniprots(ncbi_tax_id: int = 9606) -> set[str]:
     """All UniProt ACs (SwissProt + TrEMBL) for an organism."""
     return get_reflist('uniprot', ncbi_tax_id)

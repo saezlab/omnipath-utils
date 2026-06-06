@@ -12,6 +12,8 @@ chemicals use the organism-agnostic ``0`` convention).
 
 from __future__ import annotations
 
+import datetime
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -20,6 +22,8 @@ from typing import Any
 import yaml
 
 _log = logging.getLogger(__name__)
+
+MANIFEST_FILENAME = 'manifest.json'
 
 # Canonical target id_type per family (overridable via --canonical-type).
 _DEFAULT_CANONICAL = {'protein': 'uniprot', 'chemical': 'inchikey'}
@@ -106,8 +110,15 @@ def export_resolver(
     db_url: str | None = None,
     taxa: list[int] | None = None,
     max_records: int | None = None,
+    export_id: str | None = None,
 ) -> ExportStats:
-    """Project ``id_mapping`` to canonical-target parquet for ``family``."""
+    """Project ``id_mapping`` to canonical-target parquet for ``family``.
+
+    Writes the parquet tables plus a ``manifest.json`` recording the export
+    identity (``export_id``), the omnipath-utils version, the per-family row
+    counts, and a fingerprint of the backing DB. omnipath-build records the
+    consumed ``export_id`` in its own build manifest (Principle V).
+    """
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -119,6 +130,7 @@ def export_resolver(
     os.makedirs(output_dir, exist_ok=True)
     engine = get_engine(db_url)
     stats = ExportStats(family=family, canonical_type=canonical)
+    per_taxon: dict[str, int] = {}
 
     for taxon in _taxa_for_family(family, taxa):
         source_col, source_id_col, target_col, taxon_col = _project_rows(
@@ -143,6 +155,7 @@ def export_resolver(
         pq.write_table(table, path, compression='snappy')
         stats.files.append(path)
         stats.rows += table.num_rows
+        per_taxon[str(taxon)] = table.num_rows
         _log.info('wrote %s (%d rows)', path, table.num_rows)
 
     if not stats.files:
@@ -150,7 +163,95 @@ def export_resolver(
             f'No data to export for family {family!r} → {canonical!r}; the '
             f'canonical target has no backing mappings in this build.'
         )
+
+    _write_manifest(
+        output_dir=output_dir,
+        family=family,
+        canonical=canonical,
+        source_types=source_types,
+        per_taxon=per_taxon,
+        rows=stats.rows,
+        files=stats.files,
+        engine=engine,
+        export_id=export_id,
+    )
     return stats
+
+
+def _utils_version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version('omnipath-utils')
+    except Exception:  # pragma: no cover - best-effort provenance
+        return 'unknown'
+
+
+def _db_fingerprint(engine) -> dict[str, Any]:
+    """Cheap provenance: curated row count + full-UniProt reltuples estimate."""
+    from sqlalchemy import text
+
+    from omnipath_utils.db._connection import SCHEMA
+
+    fp: dict[str, Any] = {}
+    try:
+        with engine.connect() as conn:
+            fp['curated_rows'] = conn.execute(
+                text(f'SELECT count(*) FROM {SCHEMA}.id_mapping')
+            ).scalar()
+            fp['full_uniprot_rows'] = conn.execute(
+                text(
+                    'SELECT reltuples::bigint FROM pg_class '
+                    f"WHERE oid = to_regclass('{SCHEMA}.id_mapping_ftp')"
+                )
+            ).scalar()
+    except Exception as err:  # pragma: no cover - best-effort provenance
+        fp['error'] = str(err)
+    return fp
+
+
+def _write_manifest(
+    *,
+    output_dir: str,
+    family: str,
+    canonical: str,
+    source_types: list[str],
+    per_taxon: dict[str, int],
+    rows: int,
+    files: list[str],
+    engine,
+    export_id: str | None,
+) -> str:
+    """Write/merge ``manifest.json`` (one entry per exported family)."""
+    path = os.path.join(output_dir, MANIFEST_FILENAME)
+    manifest: dict[str, Any] = {}
+    if os.path.exists(path):
+        try:
+            with open(path, encoding='utf-8') as handle:
+                manifest = json.load(handle) or {}
+        except Exception:  # pragma: no cover - regenerate on corruption
+            manifest = {}
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    # ``export_id`` is stable per output dir; set on first write.
+    manifest.setdefault(
+        'export_id', export_id or now.replace(':', '').replace('-', '')
+    )
+    manifest['omnipath_utils_version'] = _utils_version()
+    manifest['db_fingerprint'] = _db_fingerprint(engine)
+    families = manifest.setdefault('families', {})
+    families[family] = {
+        'canonical_type': canonical,
+        'source_types': source_types,
+        'rows': rows,
+        'per_taxon': per_taxon,
+        'files': [os.path.relpath(f, output_dir) for f in files],
+        'created_at': now,
+    }
+    with open(path, 'w', encoding='utf-8') as handle:
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+    _log.info('wrote %s (export_id=%s)', path, manifest['export_id'])
+    return manifest['export_id']
 
 
 def _project_rows(

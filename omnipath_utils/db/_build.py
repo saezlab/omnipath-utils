@@ -397,6 +397,77 @@ class DatabaseBuilder:
             duration,
         )
 
+    def populate_reflists_global_swissprot(self):
+        """Load the global reviewed (SwissProt) AC set under ncbi_tax_id 0.
+
+        SwissProt membership is organism-agnostic — an AC is reviewed or not,
+        independent of taxon. One ``reviewed:true`` query (no organism) yields
+        the complete reviewed set (~570k ACs), which drives SwissProt-preference
+        for *every* organism in the resolver projection (FR-003), not just the
+        handful with per-organism reflists.
+        """
+        from omnipath_utils.reflists import all_swissprots_global
+        from omnipath_utils.db._connection import get_connection
+
+        start = time.time()
+        with Session(self.engine) as session:
+            uniprot_type = (
+                session.query(IdType).filter_by(name='uniprot').first()
+            )
+            if not uniprot_type:
+                _log.error('ID type "uniprot" not found, skipping global reflist')
+                return
+            type_id = uniprot_type.id
+
+        ids = all_swissprots_global()
+        if self._max_records is not None:
+            ids = set(list(ids)[: self._max_records])
+
+        conn = get_connection(self._db_url)
+        cur = conn.cursor()
+        cur.execute(
+            f"DELETE FROM {SCHEMA}.reflist WHERE ncbi_tax_id = 0 "
+            f"AND list_name = 'swissprot'"
+        )
+        with cur.copy(
+            f'COPY {SCHEMA}.reflist'
+            ' (identifier, id_type_id, ncbi_tax_id, list_name)'
+            ' FROM STDIN'
+        ) as copy:
+            for ac in ids:
+                copy.write_row((ac, type_id, 0, 'swissprot'))
+        conn.commit()
+        conn.close()
+        _log.info(
+            'Global SwissProt reflist: %d ACs in %.1fs',
+            len(ids),
+            time.time() - start,
+        )
+
+    def create_resolver_views(self):
+        """(Re)create the canonical resolver projection views (SQL DDL).
+
+        ``resolver_protein`` projects the comprehensive translation to per-taxon
+        primary-SwissProt UniProt — the SQL replacement for Python uniprot
+        cleanup in DB-backed mode, read directly by omnipath-build via DuckDB
+        ATTACH (spec 002, FR-003/005). Idempotent (CREATE OR REPLACE).
+        """
+        import importlib.resources as ir
+
+        sql = (
+            ir.files('omnipath_utils.db')
+            .joinpath('sql/resolver_protein.sql')
+            .read_text(encoding='utf-8')
+        )
+        from omnipath_utils.db._connection import get_connection
+
+        conn = get_connection(self._db_url)
+        cur = conn.cursor()
+        cur.execute(sql)
+        conn.commit()
+        conn.close()
+        _log.info('Created resolver projection views')
+
     def build_reference_tables(self):
         """Build all reference tables (id_types, backends, organisms)."""
         self.create_tables()
@@ -431,6 +502,13 @@ class DatabaseBuilder:
                 self.populate_reflists(org)
             except Exception as e:
                 _log.error('Failed reflists for org %d: %s', org, e)
+
+        # Global reviewed (SwissProt) set — drives organism-agnostic
+        # SwissProt-preference in the resolver projection (FR-003).
+        try:
+            self.populate_reflists_global_swissprot()
+        except Exception as e:
+            _log.error('Failed global SwissProt reflist: %s', e)
 
     # FTP idmapping labels NOT loaded by default (annotation/clustering, not ID
     # translation; they 10x the table). Opt in via OMNIPATH_BUILD_FTP_HEAVY_TYPES.
@@ -647,6 +725,9 @@ class DatabaseBuilder:
             conn.close()
             raise
         conn.close()
+
+        # The resolver projection reads id_mapping_ftp, so (re)create it now.
+        self.create_resolver_views()
 
         duration = time.time() - start
         _log.info(

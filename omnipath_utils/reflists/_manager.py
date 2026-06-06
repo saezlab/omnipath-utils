@@ -109,6 +109,66 @@ class ReferenceListManager:
             ncbi_tax_id
         )
 
+    def load_swissprot_global(self) -> set[str]:
+        """Load the complete reviewed (SwissProt) AC set, all organisms.
+
+        Reviewed status is organism-agnostic; one ``reviewed:true`` query (no
+        organism filter) returns the whole reviewed set (~570k ACs). Cached
+        under the sentinel key ``('swissprot', 0)``.
+        """
+        key = ('swissprot', 0)
+        if key not in self._cache:
+            try:
+                from pypath.inputs.uniprot import UniprotQuery
+
+                q = UniprotQuery(fields='accession', reviewed=True)
+                data = q.perform()
+                result = set(data.keys()) if data else set()
+            except Exception:
+                result = self._load_uniprot_global_direct(reviewed=True)
+            self._cache[key] = result
+        return self._cache[key]
+
+    def _load_uniprot_global_direct(self, reviewed: bool = True) -> set[str]:
+        """Direct HTTP fallback: all (un)reviewed ACs, no organism.
+
+        Uses the *compressed* stream (~5 MB gzip) which is far more robust than
+        the plain stream for the full ~570k-row pull (the latter routinely drops
+        mid-response). Retries the whole request a few times on connection drop.
+        """
+        import gzip
+        import io
+
+        import requests
+
+        url = 'https://rest.uniprot.org/uniprotkb/stream'
+        params = {
+            'query': f'reviewed:{str(reviewed).lower()}',
+            'fields': 'accession',
+            'format': 'list',
+            'compressed': 'true',
+        }
+        last_err: Exception | None = None
+        for _attempt in range(4):
+            try:
+                resp = requests.get(
+                    url, params=params, timeout=900,
+                    headers={'Accept-Encoding': 'gzip'},
+                )
+                resp.raise_for_status()
+                raw = gzip.GzipFile(fileobj=io.BytesIO(resp.content)).read()
+                return {
+                    line.strip()
+                    for line in raw.decode().splitlines()
+                    if line.strip()
+                }
+            except Exception as err:  # noqa: BLE001 - retry transient drops
+                last_err = err
+                _log.warning('global reviewed-list fetch failed: %s', err)
+        raise RuntimeError(
+            f'could not fetch global reviewed list: {last_err}'
+        )
+
     def _load_uniprot_direct(
         self, ncbi_tax_id: int, reviewed: bool | None = None
     ) -> set[str]:
