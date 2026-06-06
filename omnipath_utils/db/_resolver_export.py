@@ -162,9 +162,11 @@ def _project_rows(
     max_records: int | None,
 ):
     """One clean pass: emit aligned (source_type, source_id, target, taxon) columns."""
+    from collections import defaultdict
+
     from sqlalchemy.orm import Session
 
-    from omnipath_utils.db._query import get_full_table
+    from omnipath_utils.db._query import get_full_table, translate_ids
 
     s_type: list[str] = []
     s_id: list[str] = []
@@ -172,13 +174,30 @@ def _project_rows(
     taxon_text: list[str] = []
     with Session(engine) as session:
         for source_type in source_types:
-            table = get_full_table(session, source_type, canonical, taxon)
-            if not table:
-                continue
             if family == 'protein':
+                # The comprehensive full-UniProt idmapping is stored in the
+                # native ``uniprot -> X`` direction. Query that direction over
+                # both the curated and full-UniProt tables, then invert to the
+                # ``X -> uniprot`` projection the resolver consumes. (A direct
+                # ``X -> uniprot`` whole-table query would only ever see the
+                # curated table — the full table is never a blanket fallback.)
+                native, _ = translate_ids(
+                    session, None, canonical, source_type, taxon,
+                    full_uniprot='both',
+                )
+                inverted: defaultdict[str, set[str]] = defaultdict(set)
+                for uniprot_ac, xs in native.items():
+                    for x in xs:
+                        inverted[x].add(uniprot_ac)
                 from omnipath_utils.mapping._cleanup import uniprot_cleanup_batch
 
-                table = uniprot_cleanup_batch(table, taxon, session=session)
+                table = uniprot_cleanup_batch(
+                    dict(inverted), taxon, session=session
+                )
+            else:
+                table = get_full_table(session, source_type, canonical, taxon)
+            if not table:
+                continue
             for source_id, targets in table.items():
                 for tgt in targets:
                     s_type.append(source_type)
