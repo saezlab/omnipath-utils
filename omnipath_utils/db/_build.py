@@ -447,10 +447,15 @@ class DatabaseBuilder:
     def create_resolver_views(self):
         """(Re)create the canonical resolver projection views (SQL DDL).
 
-        ``resolver_protein`` projects the comprehensive translation to per-taxon
-        primary-SwissProt UniProt — the SQL replacement for Python uniprot
-        cleanup in DB-backed mode, read directly by omnipath-build via DuckDB
-        ATTACH (spec 002, FR-003/005). Idempotent (CREATE OR REPLACE).
+        Two views, both read directly by omnipath-build via DuckDB ATTACH with the
+        taxon filter pushed down (spec 002, FR-003/005/026; idempotent):
+
+        * ``resolver_gene`` — maps any in-scope source id (genesymbol / ensg / ensp
+          / uniprot / entrez) to its **NCBI Gene (Entrez) anchor** per taxon (the
+          gene-anchored canonical identity, US7). ~0.65 s/taxon.
+        * ``resolver_protein`` — per-taxon ``source_id -> UniProt`` (primary
+          SwissProt where available) — the representative UniProt + the SQL
+          replacement for the Python uniprot cleanup in DB-backed mode.
         """
         import importlib.resources as ir
 
