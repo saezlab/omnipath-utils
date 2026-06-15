@@ -705,9 +705,13 @@ class DatabaseBuilder:
                 cur.execute(f'ANALYZE {new}')
                 conn.commit()
 
-                # 3b. Atomic swap behind the id_mapping_all view.
-                cur.execute(f'DROP VIEW IF EXISTS {SCHEMA}.id_mapping_all')
-                cur.execute(f'DROP TABLE IF EXISTS {SCHEMA}.id_mapping_ftp')
+                # 3b. Atomic swap behind the id_mapping_all view. CASCADE drops
+                # the resolver views (resolver_gene / resolver_protein /
+                # resolver_gene_protein_global) that depend on id_mapping_ftp;
+                # create_resolver_views() below rebuilds them all from
+                # resolver_protein.sql.
+                cur.execute(f'DROP VIEW IF EXISTS {SCHEMA}.id_mapping_all CASCADE')
+                cur.execute(f'DROP TABLE IF EXISTS {SCHEMA}.id_mapping_ftp CASCADE')
                 cur.execute(
                     f'ALTER TABLE {new} RENAME TO id_mapping_ftp'
                 )
