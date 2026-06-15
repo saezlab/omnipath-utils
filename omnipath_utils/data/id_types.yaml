@@ -478,6 +478,7 @@ chebi:
     chalmers_gem: metChEBIID
     metanetx: chebi
     ramp: chebi
+    kegg_compound: chebi
   aliases:
     - chebi_id
 
@@ -504,6 +505,7 @@ kegg:
     chalmers_gem: metKEGGID
     metanetx: kegg
     ramp: kegg
+    kegg_compound: kegg
   aliases:
     - kegg_id
     - kegg_compound
