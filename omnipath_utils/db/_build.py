@@ -1403,8 +1403,157 @@ class DatabaseBuilder:
 
         for backend in self._STRUCTURE_BACKENDS:
             try:
-                self.populate_mapping(backend, "inchikey", 0, backend)
+                if backend == "pubchem":
+                    # PubChem cid->inchikey is ~119M rows -- the single largest
+                    # chemical mapping. Use the parallel, streamed loader rather
+                    # than the serial materialise-dict-then-one-COPY path.
+                    self._populate_pubchem_inchikey()
+                else:
+                    self.populate_mapping(backend, "inchikey", 0, backend)
             except Exception as e:
                 _log.warning(
                     "%s -> inchikey failed: %s", backend, e,
                 )
+
+    def _copy_pairs_parallel(
+        self,
+        pairs,
+        src_type_id: int,
+        tgt_type_id: int,
+        ncbi_tax_id: int,
+        backend_id: int,
+        n_workers: int | None = None,
+        batch_size: int = 20000,
+    ) -> int:
+        """Fan a stream of ``(source_id, target_id)`` pairs into N concurrent COPYs.
+
+        One feeder (this call) pulls from ``pairs`` -- typically a generator that
+        streams + decompresses straight off disk -- batches the rows, and
+        dispatches them over a bounded queue to ``n_workers`` worker threads,
+        each holding its own connection and a single open ``COPY ... FROM
+        STDIN``. This parallelises the write (the bottleneck for a heavily
+        indexed target like ``id_mapping``: 3 indexes => ~45k rows/s on one
+        COPY) and keeps memory bounded (no full ``{source: {targets}}`` dict).
+
+        Each worker commits its own portion, so an interrupted load can leave a
+        partial slice; callers DELETE the slice first and a re-run is idempotent.
+        Returns the total row count written.
+        """
+        import queue
+        import threading
+        from omnipath_utils.db._connection import get_connection
+
+        if n_workers is None:
+            n_workers = min(
+                int(os.environ.get("OMNIPATH_BUILD_MAPPING_WORKERS", "8")),
+                16,
+            )
+        n_workers = max(1, n_workers)
+
+        q: queue.Queue = queue.Queue(maxsize=n_workers * 4)
+        _SENTINEL = object()
+        counts = [0] * n_workers
+        errors: list[Exception] = []
+        copy_sql = (
+            f"COPY {SCHEMA}.id_mapping "
+            "(source_type_id, target_type_id, ncbi_tax_id, "
+            "source_id, target_id, backend_id) FROM STDIN"
+        )
+
+        def worker(idx: int):
+            try:
+                conn = get_connection(self._db_url)
+                with conn.cursor() as cur:
+                    cur.execute("SET synchronous_commit = off")
+                    with cur.copy(copy_sql) as cp:
+                        while True:
+                            batch = q.get()
+                            if batch is _SENTINEL:
+                                q.task_done()
+                                break
+                            for src_id, tgt_id in batch:
+                                cp.write_row((
+                                    src_type_id, tgt_type_id, ncbi_tax_id,
+                                    src_id, tgt_id, backend_id,
+                                ))
+                            counts[idx] += len(batch)
+                            q.task_done()
+                conn.commit()
+                conn.close()
+            except Exception as e:  # noqa: BLE001
+                errors.append(e)
+                _log.error("COPY worker %d failed: %s", idx, e)
+
+        threads = [
+            threading.Thread(target=worker, args=(i,), daemon=True)
+            for i in range(n_workers)
+        ]
+        for t in threads:
+            t.start()
+
+        batch: list = []
+        for pair in pairs:
+            batch.append(pair)
+            if len(batch) >= batch_size:
+                q.put(batch)
+                batch = []
+                if errors:
+                    break
+        if batch and not errors:
+            q.put(batch)
+        for _ in range(n_workers):
+            q.put(_SENTINEL)
+        for t in threads:
+            t.join()
+
+        if errors:
+            raise errors[0]
+
+        return sum(counts)
+
+    def _populate_pubchem_inchikey(self, n_workers: int | None = None):
+        """Parallel, streamed load of the full PubChem CID -> InChIKey mapping.
+
+        The single largest chemical namespace (~119M rows). Rather than
+        materialising the whole ``{cid: {inchikey}}`` dict in RAM (~11 GB) and
+        draining it through one serial COPY into the 3-index ``id_mapping``
+        table, this streams ``pubchem_mapping`` straight into N concurrent COPY
+        workers -- bounded memory, ~N x the write throughput. Honours
+        ``--pubchem-max-records`` (the per-backend effective limit). (T020/T021)
+        """
+        from itertools import islice
+        from pypath.inputs.pubchem import pubchem_mapping
+
+        with Session(self.engine) as session:
+            src = session.query(IdType).filter_by(name="pubchem").first()
+            tgt = session.query(IdType).filter_by(name="inchikey").first()
+            bk = session.query(Backend).filter_by(name="pubchem").first()
+            if not src or not tgt or not bk:
+                _log.error("pubchem/inchikey id_type or backend missing")
+                return
+            src_id, tgt_id, bk_id = src.id, tgt.id, bk.id
+
+        # Replace the existing pubchem -> inchikey slice: delete (committed),
+        # then the parallel COPY appends. A re-run is idempotent.
+        with Session(self.engine) as session:
+            session.execute(
+                text(
+                    f"DELETE FROM {SCHEMA}.id_mapping WHERE source_type_id = :s "
+                    "AND target_type_id = :t AND ncbi_tax_id = 0 "
+                    "AND backend_id = :b"
+                ),
+                {"s": src_id, "t": tgt_id, "b": bk_id},
+            )
+            session.commit()
+
+        limit = self._effective_limit("pubchem")
+        rows = pubchem_mapping("inchikey", source="cid")  # yields (cid, inchikey)
+        if limit is not None:
+            rows = islice(rows, limit)
+
+        start = time.time()
+        n = self._copy_pairs_parallel(rows, src_id, tgt_id, 0, bk_id, n_workers)
+        _log.info(
+            "PubChem cid->inchikey: %d rows in %.1fs (parallel streamed COPY)",
+            n, time.time() - start,
+        )
