@@ -56,14 +56,21 @@ class KeggCompoundBackend(MappingBackend):
         **kwargs: object,
     ) -> dict[str, set[str]]:
         from pypath.inputs.metanetx import metanetx_mapping
-        from pypath.inputs.kegg_api import _kegg_conv
+
+        try:
+            from pypath.inputs.kegg_api import _kegg_conv as _rest_fn
+        except ImportError:
+            _log.warning(
+                "KeggCompound: pypath.inputs.kegg_api unavailable "                "(pycurl missing?); KEGG REST source disabled"
+            )
+            _rest_fn = lambda *a, **kw: {}
 
         _log.info("KeggCompound: %s -> %s", id_type, target_id_type)
 
         if id_type == "kegg" and target_id_type == "chebi":
-            return self._load_kegg_to_chebi(metanetx_mapping, _kegg_conv)
+            return self._load_kegg_to_chebi(metanetx_mapping, _rest_fn)
         elif id_type == "chebi" and target_id_type == "kegg":
-            fwd = self._load_kegg_to_chebi(metanetx_mapping, _kegg_conv)
+            fwd = self._load_kegg_to_chebi(metanetx_mapping, _rest_fn)
             return self._reverse(fwd)
         else:
             _log.debug(
