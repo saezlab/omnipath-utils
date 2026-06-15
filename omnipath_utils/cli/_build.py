@@ -32,6 +32,16 @@ def build_cmd(args: list[str]):
         help='Build from full UniProt FTP idmapping.dat.gz (all organisms, ~18GB)',
     )
     parser.add_argument(
+        '--metabolites',
+        action='store_true',
+        help=(
+            'Load ONLY the metabolite ID mappings (UniChem, RaMP, MetaNetX, '
+            'BiGG, and structure->InChIKey incl. PubChem). Additive: does not '
+            'touch the protein or FTP idmapping tables. Honours '
+            '--pubchem-max-records (omit it for the full PubChem table).'
+        ),
+    )
+    parser.add_argument(
         '--preset',
         choices=['minimal', 'standard', 'model', 'full'],
         default=None,
@@ -105,6 +115,9 @@ def build_cmd(args: list[str]):
     elif opts.ftp:
         builder.build_reference_tables()
         builder.populate_from_ftp()
+    elif opts.metabolites:
+        builder.build_reference_tables()
+        builder.populate_metabolites()
     elif opts.ref_only:
         builder.build_reference_tables()
     else:
