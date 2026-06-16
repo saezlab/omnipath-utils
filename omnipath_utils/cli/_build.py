@@ -123,4 +123,10 @@ def build_cmd(args: list[str]):
     else:
         builder.build_all(organisms=opts.organisms)
 
+    # Always (re)apply the resolver projection views so an additive/incremental
+    # load (e.g. --metabolites, --ftp) never leaves them stale or missing — they
+    # are idempotent CREATE OR REPLACE VIEWs over the just-loaded tables, and
+    # omnipath-build reads them via DuckDB ATTACH for the full build.
+    builder.create_resolver_views()
+
     print('Build complete!')

@@ -447,8 +447,7 @@ class DatabaseBuilder:
     def create_resolver_views(self):
         """(Re)create the canonical resolver projection views (SQL DDL).
 
-        Two views, both read directly by omnipath-build via DuckDB ATTACH with the
-        taxon filter pushed down (spec 002, FR-003/005/026; idempotent):
+        Read by omnipath-build via DuckDB ATTACH (spec 002/003; idempotent):
 
         * ``resolver_gene`` — maps any in-scope source id (genesymbol / ensg / ensp
           / uniprot / entrez) to its **NCBI Gene (Entrez) anchor** per taxon (the
@@ -456,22 +455,31 @@ class DatabaseBuilder:
         * ``resolver_protein`` — per-taxon ``source_id -> UniProt`` (primary
           SwissProt where available) — the representative UniProt + the SQL
           replacement for the Python uniprot cleanup in DB-backed mode.
+        * ``resolver_gene_protein_global`` — taxon-agnostic UniProt/Entrez ->
+          Entrez (the full global slice for the showcase/full build, T069/R25).
+        * ``resolver_chemical`` — chemical ``source_id -> InChIKey`` (full PubChem
+          + UniChem cross-refs, spec 003 R7) — the authoritative chemical
+          structure resolution consumed by the full build.
+
+        Applied at the end of every build mode (full / preset / ftp / metabolites)
+        so an additive/incremental load never leaves the views stale or missing.
         """
         import importlib.resources as ir
 
-        sql = (
-            ir.files('omnipath_utils.db')
-            .joinpath('sql/resolver_protein.sql')
-            .read_text(encoding='utf-8')
-        )
         from omnipath_utils.db._connection import get_connection
 
         conn = get_connection(self._db_url)
         cur = conn.cursor()
-        cur.execute(sql)
+        for sql_file in ('sql/resolver_protein.sql', 'sql/resolver_chemical.sql'):
+            sql = (
+                ir.files('omnipath_utils.db')
+                .joinpath(sql_file)
+                .read_text(encoding='utf-8')
+            )
+            cur.execute(sql)
         conn.commit()
         conn.close()
-        _log.info('Created resolver projection views')
+        _log.info('Created resolver projection views (protein + chemical)')
 
     def build_reference_tables(self):
         """Build all reference tables (id_types, backends, organisms)."""
