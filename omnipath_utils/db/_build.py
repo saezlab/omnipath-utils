@@ -737,6 +737,21 @@ class DatabaseBuilder:
                 for t in (stg, tax, lmap):
                     cur.execute(f'DROP TABLE IF EXISTS {t}')
                 conn.commit()
+                # 5. Crash-safety: a crash TRUNCATEs an UNLOGGED table on
+                # recovery — the 744M map was lost to an OOM reboot once. The
+                # load + index builds above stay unlogged (fast, no per-row WAL);
+                # this one-time SET LOGGED (own txn, after the swap commits)
+                # writes the table to WAL so it survives crashes. Reads are
+                # unaffected. Opt out for a throwaway build: set
+                # OMNIPATH_BUILD_FTP_UNLOGGED=1.
+                if os.environ.get('OMNIPATH_BUILD_FTP_UNLOGGED', '') not in (
+                    '1', 'true', 'True', 'yes',
+                ):
+                    _log.info('SET LOGGED on id_mapping_ftp (crash-safety)')
+                    cur.execute(
+                        f'ALTER TABLE {SCHEMA}.id_mapping_ftp SET LOGGED'
+                    )
+                    conn.commit()
         except Exception:
             conn.rollback()
             conn.close()
