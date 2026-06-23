@@ -76,8 +76,15 @@ class TestQuery:
     def test_translate_ids_empty(self):
         from omnipath_utils.db._query import translate_ids
 
+        # execute() must behave for both the row iteration (empty) and the
+        # FTP existence / type probes (.scalar()): the FTP table is absent.
+        empty = MagicMock()
+        empty.__iter__ = lambda self: iter([])
+        empty.scalar.return_value = None
+        empty.scalars.return_value.all.return_value = []
+        empty.fetchall.return_value = []
         mock_session = MagicMock()
-        mock_session.execute.return_value = []
+        mock_session.execute.return_value = empty
 
         result = translate_ids(
             mock_session, ['FAKE'], 'genesymbol', 'uniprot', 9606

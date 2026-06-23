@@ -138,6 +138,7 @@ class DatabaseBuilder:
             'lipidmaps',
             'swisslipids',
             'pubchem',
+            'kegg_compound',
         ]
 
         with Session(self.engine) as session:
@@ -836,6 +837,310 @@ class DatabaseBuilder:
         self._populate_metanetx()
         self._populate_bigg()
         self._populate_structures()
+        self._populate_chemical_long()
+
+    # ------------------------------------------------------------------
+    # Long-value chemical mappings: names + structures (id_mapping_long)
+    # ------------------------------------------------------------------
+
+    #: Values longer than this (bytes) are skipped, not truncated, to stay
+    #: within the B-tree index-key bound and never forge a wrong key
+    #: (FR-017/FR-019 edge case). Full names/IUPAC and typical InChI/SMILES are
+    #: far below this; only pathological structure strings exceed it.
+    _MAX_LONG_KEY = 2000
+
+    @staticmethod
+    def _long_rows(
+        data: dict,
+        src_type_id: int,
+        tgt_type_id: int,
+        backend_id: int,
+        is_name: bool,
+        max_key: int = _MAX_LONG_KEY,
+        limit: int | None = None,
+    ) -> tuple[list[tuple], int]:
+        """Pure projection of a ``{source: {targets}}`` mapping into
+        ``id_mapping_long`` COPY rows ``(src_type_id, tgt_type_id, 0, source_id,
+        source_label, target_id, backend_id)``.
+
+        Name source keys are lowercased + whitespace-stripped with the original
+        kept as ``source_label`` (FR-002); structure/db-id keys are verbatim
+        (``source_label`` is ``None``; FR-019). Empty and over-``max_key`` values
+        are skipped (counted), never truncated. ``limit`` caps the row count
+        (FR-012). Returns ``(rows, skipped)``.
+        """
+        rows: list[tuple] = []
+        skipped = 0
+        for source_id, target_ids in data.items():
+            raw = str(source_id).strip()
+            if is_name:
+                key, label = raw.lower(), raw
+            else:
+                key, label = raw, None
+            if not key or len(key.encode('utf-8')) > max_key:
+                skipped += 1
+                continue
+            for target_id in target_ids:
+                tgt = str(target_id).strip()
+                if not tgt or len(tgt.encode('utf-8')) > max_key:
+                    skipped += 1
+                    continue
+                rows.append(
+                    (src_type_id, tgt_type_id, 0, key, label, tgt, backend_id)
+                )
+                if limit is not None and len(rows) >= limit:
+                    return rows, skipped
+        return rows, skipped
+
+    def _long_type_class(self, type_name: str) -> str:
+        """Classify an id_type for ``id_mapping_long`` case handling."""
+        from omnipath_utils.db._query import NAME_TYPES, STRUCTURE_TYPES
+
+        if type_name in NAME_TYPES:
+            return 'name'
+        if type_name in STRUCTURE_TYPES:
+            return 'structure'
+        return 'id'
+
+    def _populate_long_slice(
+        self,
+        data: dict,
+        source_type: str,
+        target_type: str,
+        backend_name: str,
+    ) -> int:
+        """Load one ``(source_type, target_type, backend)`` slice into
+        ``id_mapping_long`` -- the long-value (name/structure) sibling table.
+
+        Name source keys are lowercased + whitespace-stripped (case-insensitive
+        matching, FR-002) with the original case kept in ``source_label``;
+        structure source keys (``inchi``/``smiles``) are stored verbatim
+        (FR-019). Idempotent: the slice is DELETEd then COPYd (R6). Honours the
+        backend's effective ``--max-records`` cap (FR-012). Over-long values are
+        skipped and counted, never truncated. Returns the row count written.
+        """
+        if not data:
+            return 0
+
+        with Session(self.engine) as session:
+            src_type = session.query(IdType).filter_by(name=source_type).first()
+            tgt_type = session.query(IdType).filter_by(name=target_type).first()
+            backend = session.query(Backend).filter_by(name=backend_name).first()
+            if not src_type or not tgt_type or not backend:
+                _log.error(
+                    'id_mapping_long: missing id_type/backend for %s -> %s (%s)',
+                    source_type, target_type, backend_name,
+                )
+                return 0
+            src_type_id, tgt_type_id, backend_id = (
+                src_type.id, tgt_type.id, backend.id,
+            )
+
+        is_name = self._long_type_class(source_type) == 'name'
+        limit = self._effective_limit(backend_name)
+        start = time.time()
+
+        # Idempotent: replace this slice (organism-agnostic, tax 0).
+        with Session(self.engine) as session:
+            session.execute(
+                text(
+                    f'DELETE FROM {SCHEMA}.id_mapping_long'
+                    ' WHERE source_type_id = :src AND target_type_id = :tgt'
+                    ' AND ncbi_tax_id = 0 AND backend_id = :bk'
+                ),
+                {'src': src_type_id, 'tgt': tgt_type_id, 'bk': backend_id},
+            )
+            session.commit()
+
+        rows, skipped = self._long_rows(
+            data, src_type_id, tgt_type_id, backend_id, is_name,
+            self._MAX_LONG_KEY, limit,
+        )
+
+        from omnipath_utils.db._connection import get_connection
+
+        conn = get_connection(self._db_url)
+        row_count = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping_long'
+                    ' (source_type_id, target_type_id, ncbi_tax_id,'
+                    ' source_id, source_label, target_id, backend_id)'
+                    ' FROM STDIN'
+                ) as copy:
+                    for row in rows:
+                        copy.write_row(row)
+                        row_count += 1
+            conn.commit()
+        finally:
+            conn.close()
+
+        duration = time.time() - start
+        with Session(self.engine) as session:
+            session.add(
+                BuildInfo(
+                    table_name='id_mapping_long',
+                    source_type=source_type,
+                    target_type=target_type,
+                    ncbi_tax_id=0,
+                    backend=backend_name,
+                    row_count=row_count,
+                    duration_secs=duration,
+                    status='done',
+                )
+            )
+            session.commit()
+
+        _log.info(
+            'id_mapping_long %s -> %s (%s): %d rows%s in %.1fs',
+            source_type, target_type, backend_name, row_count,
+            f' ({skipped} skipped)' if skipped else '', duration,
+        )
+        return row_count
+
+    def _populate_chemical_long(self):
+        """Build the long-value chemical layer in ``id_mapping_long``:
+        names (name/synonym/iupac/traditional_iupac) and structures
+        (inchi/smiles) for every targeted resource, with the full pairwise set
+        across the three identifier classes (US1/US2).
+
+        Per-resource builders are dispatched here; each writes its slices via
+        :meth:`_populate_long_slice` and its counts to ``build_info``. The
+        dispatcher records per-class roll-ups at the end (FR-011).
+        """
+        _log.info('Building long-value chemical mappings (names + structures)...')
+
+        builders = [
+            ('chebi', self._long_chebi),
+            ('hmdb', self._long_hmdb),
+            ('chembl', self._long_chembl),
+            ('kegg_compound', self._long_kegg),
+            ('ramp', self._long_ramp),
+            ('structures', self._long_structures),
+        ]
+        for label, fn in builders:
+            try:
+                fn()
+            except Exception as e:
+                _log.warning('chemical_long: %s builder failed: %s', label, e)
+
+        self._record_long_rollups()
+
+    # Per-resource long-value builders. Implemented across US1 (T015/T016) and
+    # US2 (T024/T025/T026/T027a); scaffolded here so the dispatcher and its
+    # build_info contract exist from the Foundational phase (T012).
+    def _long_chebi(self):
+        """ChEBI name/synonym/iupac -> chebi (+ reverse). US1 (T015)."""
+        return
+
+    def _long_hmdb(self):
+        """HMDB name/iupac/traditional/synonym -> chebi/hmdb. US1 (T016)."""
+        return
+
+    def _long_chembl(self):
+        """ChEMBL name (pref_name) + synonym -> chembl/chebi. US2 (T024)."""
+        return
+
+    def _long_kegg(self):
+        """KEGG compound name -> kegg/chebi. US2 (T025)."""
+        return
+
+    def _long_ramp(self):
+        """RaMP synonym -> chebi/hmdb (analytesynonym). US2 (T026)."""
+        return
+
+    def _long_structures(self):
+        """Structure (inchi/smiles) <-> db-id/name, curated resources. US2 (T027a)."""
+        return
+
+    def _record_long_rollups(self):
+        """Write per-class roll-up counts for the long-value layer to
+        ``build_info`` (``names.total`` / ``structures.total``) from the slices
+        already recorded this build."""
+        from omnipath_utils.db._query import NAME_TYPES, STRUCTURE_TYPES
+
+        with Session(self.engine) as session:
+            rows = session.execute(
+                text(
+                    f"SELECT source_type, target_type, row_count"
+                    f" FROM {SCHEMA}.build_info"
+                    " WHERE table_name = 'id_mapping_long'"
+                    " AND status = 'done'"
+                )
+            ).fetchall()
+            names_total = sum(
+                r[2] or 0 for r in rows
+                if r[0] in NAME_TYPES or r[1] in NAME_TYPES
+            )
+            struct_total = sum(
+                r[2] or 0 for r in rows
+                if r[0] in STRUCTURE_TYPES or r[1] in STRUCTURE_TYPES
+            )
+            for kind, total in (
+                ('names', names_total), ('structures', struct_total),
+            ):
+                session.add(
+                    BuildInfo(
+                        table_name='id_mapping_long',
+                        source_type=kind,
+                        target_type='total',
+                        ncbi_tax_id=0,
+                        backend='rollup',
+                        row_count=total,
+                        status='done',
+                    )
+                )
+            session.commit()
+        _log.info(
+            'id_mapping_long roll-up: %d name rows, %d structure rows',
+            names_total, struct_total,
+        )
+
+    def record_ftp_types(self):
+        """Precompute and cache the set of id_types present in
+        ``id_mapping_ftp`` into ``build_info`` (``table_name = 'ftp_types'``).
+
+        Read at query time by the FR-018 fallback gate so it never has to scan
+        the 744 M-row table. Safe/idempotent: replaces any prior row. A no-op if
+        the FTP table is absent.
+        """
+        with Session(self.engine) as session:
+            present = session.execute(
+                text(f"SELECT to_regclass('{SCHEMA}.id_mapping_ftp')")
+            ).scalar()
+            if present is None:
+                _log.info('record_ftp_types: id_mapping_ftp absent, skipping')
+                return
+            names = session.execute(
+                text(
+                    f'SELECT name FROM {SCHEMA}.id_type WHERE id IN ('
+                    f' SELECT DISTINCT source_type_id FROM {SCHEMA}.id_mapping_ftp'
+                    f' UNION'
+                    f' SELECT DISTINCT target_type_id FROM {SCHEMA}.id_mapping_ftp)'
+                    ' ORDER BY name'
+                )
+            ).scalars().all()
+            session.execute(
+                text(
+                    f"DELETE FROM {SCHEMA}.build_info WHERE table_name='ftp_types'"
+                )
+            )
+            # One row per type name (build_info.source_type is varchar(64)).
+            for name in names:
+                session.add(
+                    BuildInfo(
+                        table_name='ftp_types',
+                        source_type=name,
+                        target_type=None,
+                        ncbi_tax_id=0,
+                        backend='ftp_types',
+                        row_count=len(names),
+                        status='done',
+                    )
+                )
+            session.commit()
+        _log.info('record_ftp_types: cached %d FTP id_types', len(names))
 
     # ------------------------------------------------------------------
     # UniChem auto-discovery

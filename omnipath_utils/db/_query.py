@@ -14,7 +14,39 @@ _log = logging.getLogger(__name__)
 
 
 _FTP_TABLE = 'id_mapping_ftp'
+_LONG_TABLE = 'id_mapping_long'
 _ftp_exists_cache: dict = {}
+_ftp_types_cache: dict = {}
+
+# Long-value id_types -- names and structures -- live in ``id_mapping_long``
+# (text values), not the ``varchar(64)`` database-ID ``id_mapping`` table (R2).
+NAME_TYPES: frozenset[str] = frozenset(
+    {'name', 'synonym', 'iupac', 'traditional_iupac'}
+)
+STRUCTURE_TYPES: frozenset[str] = frozenset({'inchi', 'smiles'})
+LONG_VALUE_TYPES: frozenset[str] = NAME_TYPES | STRUCTURE_TYPES
+
+
+def _is_long_query(source_type: str, target_type: str) -> bool:
+    """A query is long-valued if either side is a name or structure type."""
+    return source_type in LONG_VALUE_TYPES or target_type in LONG_VALUE_TYPES
+
+
+def _normalise_long_ids(
+    identifiers: list[str] | None,
+    source_type: str,
+) -> list[str] | None:
+    """Normalise query keys for the long-value table.
+
+    Name source types are lowercased + whitespace-stripped (case-insensitive,
+    FR-002); structure types (and any database-ID source) are matched verbatim
+    (FR-019).
+    """
+    if identifiers is None:
+        return None
+    if source_type in NAME_TYPES:
+        return [i.strip().lower() for i in identifiers]
+    return identifiers
 
 
 def _ftp_table_exists(session: Session) -> bool:
@@ -25,6 +57,68 @@ def _ftp_table_exists(session: Session) -> bool:
         ).scalar()
         _ftp_exists_cache['v'] = present is not None
     return _ftp_exists_cache['v']
+
+
+def _ftp_relevant(
+    source_type: str,
+    target_type: str,
+    ftp_types: frozenset[str],
+) -> bool:
+    """FR-018 gate predicate for the full-UniProt fallback.
+
+    ``id_mapping_ftp`` can only contain a mapping when **both** sides are
+    id_types present in that table (it is 100% UniProt-family). A pair with a
+    non-FTP type on either side has zero rows there, so consulting it is
+    fruitless -- skipping is result-identical (R8).
+    """
+    return source_type in ftp_types and target_type in ftp_types
+
+
+def _ftp_types(session: Session) -> frozenset[str]:
+    """The set of id_types present in ``id_mapping_ftp`` (cached per process).
+
+    Read cheaply from a precomputed ``build_info`` row (``table_name =
+    'ftp_types'``); if that is absent (a build predating FR-018) it is derived
+    once from the table's distinct type ids and cached. Empty when the FTP
+    table is not present.
+    """
+    if 'v' in _ftp_types_cache:
+        return _ftp_types_cache['v']
+
+    if not _ftp_table_exists(session):
+        _ftp_types_cache['v'] = frozenset()
+        return _ftp_types_cache['v']
+
+    # Precomputed by DatabaseBuilder.record_ftp_types as one row per type
+    # (build_info.source_type is varchar(64), so a row per name, not a joined
+    # string).
+    precomputed = session.execute(
+        text(
+            f"SELECT source_type FROM {SCHEMA}.build_info "
+            "WHERE table_name = 'ftp_types' AND source_type IS NOT NULL"
+        )
+    ).scalars().all()
+    if precomputed:
+        types = frozenset(t for t in precomputed if t)
+    else:
+        _log.warning(
+            'ftp_types not precomputed in build_info; deriving once from '
+            '%s.%s (run DatabaseBuilder.record_ftp_types to cache it)',
+            SCHEMA,
+            _FTP_TABLE,
+        )
+        rows = session.execute(
+            text(
+                f'SELECT name FROM {SCHEMA}.id_type WHERE id IN ('
+                f' SELECT DISTINCT source_type_id FROM {SCHEMA}.{_FTP_TABLE}'
+                f' UNION'
+                f' SELECT DISTINCT target_type_id FROM {SCHEMA}.{_FTP_TABLE})'
+            )
+        ).scalars().all()
+        types = frozenset(rows)
+
+    _ftp_types_cache['v'] = types
+    return types
 
 
 def _query_table(
@@ -125,8 +219,20 @@ def translate_ids(
     Returns:
         Tuple of (results dict, set of backend names used).
     """
+    # Long-value (name / structure) queries route to the separate
+    # ``id_mapping_long`` table (R2). Names are matched case-insensitively,
+    # structures verbatim; chemicals are organism-agnostic (rows at tax 0), and
+    # this path never touches the UniProt FTP table (FR-018 holds trivially).
+    if _is_long_query(source_type, target_type):
+        long_ids = _normalise_long_ids(identifiers, source_type)
+        result, backends_used = _query_table(
+            session, f'{SCHEMA}.{_LONG_TABLE}',
+            long_ids, source_type, target_type, 0,
+        )
+        return dict(result), backends_used
+
     # Normalise HMDB IDs (old 5-digit → 7-digit format)
-    if source_type == "hmdb" and identifiers is not None:
+    if source_type == 'hmdb' and identifiers is not None:
         from omnipath_utils.mapping._special import normalise_hmdb
         identifiers = [normalise_hmdb(i) for i in identifiers]
 
@@ -146,6 +252,15 @@ def translate_ids(
         if missing:
             want_ftp = True
             ftp_ids = missing
+
+    # FR-018 gate: the ~744 M-row FTP table is 100% UniProt-family, so a pair
+    # with a non-FTP type on either side (e.g. ``name → chebi``, ``chebi →
+    # hmdb``) has zero rows there. Skip the fruitless scan -- result-identical
+    # to the prior unconditional fallback, a pure latency win (R8).
+    if want_ftp and not _ftp_relevant(
+        source_type, target_type, _ftp_types(session)
+    ):
+        want_ftp = False
 
     if want_ftp and _ftp_table_exists(session):
         ftp_result, ftp_backends = _query_table(
@@ -231,6 +346,32 @@ def identify_ids(
                 'mappings_count': row[1],
             })
 
+        # Also consult the long-value table (names / structures). Names are
+        # stored lowercased, so match both verbatim and lowercased keys.
+        long_rows = session.execute(
+            text(f"""
+                SELECT st.name, 'source' AS role, count(DISTINCT m.target_id)
+                FROM {SCHEMA}.{_LONG_TABLE} m
+                JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
+                WHERE m.source_id IN (:id, :id_lower)
+                GROUP BY st.name
+                UNION ALL
+                SELECT tt.name, 'target' AS role, count(DISTINCT m.source_id)
+                FROM {SCHEMA}.{_LONG_TABLE} m
+                JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
+                WHERE m.target_id = :id
+                GROUP BY tt.name
+            """),
+            {'id': identifier, 'id_lower': identifier.strip().lower()},
+        ).fetchall()
+
+        for row in long_rows:
+            matches.append({
+                'id_type': row[0],
+                'role': row[1],
+                'mappings_count': row[2],
+            })
+
         result[identifier] = matches
 
     return result
@@ -270,6 +411,32 @@ def get_all_mappings(
     for row in rows:
         src_id, tgt_type, tgt_id = row
         result.setdefault(src_id, {}).setdefault(tgt_type, []).append(tgt_id)
+
+    # Union the long-value table (names / structures). For a name source the
+    # stored key is lowercased, so match verbatim or lowercased; results are
+    # keyed back under the caller's original identifier.
+    if source_type in LONG_VALUE_TYPES:
+        key_map: dict[str, str] = {}
+        for ident in identifiers:
+            key_map[ident] = ident
+            key_map[ident.strip().lower()] = ident
+        long_rows = session.execute(
+            text(f"""
+                SELECT m.source_id, tt.name, m.target_id
+                FROM {SCHEMA}.{_LONG_TABLE} m
+                JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
+                JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
+                WHERE st.name = :src_type
+                AND m.source_id = ANY(:ids)
+                ORDER BY m.source_id, tt.name
+            """),
+            {'src_type': source_type, 'ids': list(key_map.keys())},
+        ).fetchall()
+        for src_id, tgt_type, tgt_id in long_rows:
+            orig = key_map.get(src_id, src_id)
+            bucket = result.setdefault(orig, {}).setdefault(tgt_type, [])
+            if tgt_id not in bucket:
+                bucket.append(tgt_id)
 
     return result
 

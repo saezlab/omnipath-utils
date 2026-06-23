@@ -34,6 +34,11 @@ def _fake_query_table(session, table, identifiers, src, tgt, tax):
 def _patch(monkeypatch):
     monkeypatch.setattr(_query, '_query_table', _fake_query_table)
     monkeypatch.setattr(_query, '_ftp_table_exists', lambda session: True)
+    # genesymbol→uniprot is UniProt-relevant, so the FR-018 gate must allow the
+    # FTP fallback these policy tests exercise.
+    monkeypatch.setattr(
+        _query, '_ftp_types', lambda session: frozenset({'genesymbol', 'uniprot'})
+    )
 
 
 def _translate(ids, **kw):

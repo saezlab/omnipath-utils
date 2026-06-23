@@ -3,6 +3,18 @@
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _clear_query_caches():
+    """Reset the per-process FTP existence / type caches between tests."""
+    from omnipath_utils.db import _query
+
+    _query._ftp_exists_cache.clear()
+    _query._ftp_types_cache.clear()
+    yield
+    _query._ftp_exists_cache.clear()
+    _query._ftp_types_cache.clear()
+
+
 @pytest.fixture
 def sample_mapping_data():
     """Sample ID mapping data for testing."""

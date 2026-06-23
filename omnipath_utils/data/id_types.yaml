@@ -591,11 +591,24 @@ smiles:
     swisslipids: SMILES (pH7.3)
   aliases: []
 
+name:
+  label: Name
+  entity_type: small_molecule
+  backends:
+    chebi: name
+    chembl: pref_name
+    hmdb: name
+    kegg_compound: name
+  aliases:
+    - compound_name
+    - primary_name
+
 iupac:
   label: IUPAC name
   entity_type: small_molecule
   backends:
     hmdb: iupac_name
+    chebi: iupac
   aliases:
     - iupac_name
 

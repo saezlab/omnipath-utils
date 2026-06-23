@@ -105,6 +105,59 @@ class IdMapping(Base):
     )
 
 
+class IdMappingLong(Base):
+    """Long-value mappings: names and structures (InChI/SMILES).
+
+    A sibling of :class:`IdMapping` purpose-built for *long, variable-length*
+    values that do not fit (or do not belong in) the ``varchar(64)`` database-ID
+    table -- chemical names/synonyms/IUPAC names and structure strings
+    (``inchi``/``smiles``). Holding them here keeps the 213 M-row ``id_mapping``
+    hot path and its indexes untouched (R2, FR-017/SC-008): the database-ID
+    tables are never widened, rewritten or reloaded for this feature.
+
+    Value columns are ``text``. ``source_id`` is the forward lookup key: for
+    **name** source types it is lowercased + whitespace-stripped (case-insensitive
+    matching, FR-002), with the original-case value kept in ``source_label``; for
+    **structure** types (``inchi``/``smiles``) and database IDs it is stored
+    **verbatim** (case is chemically meaningful -- ``C`` != ``c`` -- FR-019).
+    Chemicals are organism-agnostic, so ``ncbi_tax_id`` is always ``0``.
+    """
+
+    __tablename__ = 'id_mapping_long'
+    __table_args__ = (
+        Index(
+            'idx_long_lookup',
+            'source_type_id',
+            'target_type_id',
+            'source_id',
+        ),
+        Index(
+            'idx_long_reverse',
+            'target_type_id',
+            'source_type_id',
+            'target_id',
+        ),
+        {'schema': 'omnipath_utils'},
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    source_type_id: Mapped[int] = mapped_column(
+        SmallInteger, ForeignKey('omnipath_utils.id_type.id'), nullable=False
+    )
+    target_type_id: Mapped[int] = mapped_column(
+        SmallInteger, ForeignKey('omnipath_utils.id_type.id'), nullable=False
+    )
+    ncbi_tax_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_id: Mapped[str] = mapped_column(Text, nullable=False)
+    source_label: Mapped[str | None] = mapped_column(Text)
+    target_id: Mapped[str] = mapped_column(Text, nullable=False)
+    backend_id: Mapped[int] = mapped_column(
+        SmallInteger, ForeignKey('omnipath_utils.backend.id'), nullable=False
+    )
+
+
 class Reflist(Base):
     __tablename__ = 'reflist'
     __table_args__ = (
