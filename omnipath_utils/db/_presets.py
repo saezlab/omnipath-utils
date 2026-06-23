@@ -64,6 +64,19 @@ PRESETS = {
         'reflists': True,
     },
 
+    'chemical': {
+        'description': (
+            'Complete chemical stack: database IDs + names + structures '
+            '(InChI/SMILES), no protein/gene/miRNA'
+        ),
+        'organisms': HUMAN,   # chemicals are organism-agnostic (rows at tax 0)
+        'mappings': [],       # no protein/gene mappings
+        'metabolite': True,   # UniChem/RaMP/MetaNetX/BiGG/structures + names
+        'mirna': False,
+        'orthology': False,
+        'reflists': False,
+    },
+
     'cosmos': {
         'description': 'All mappings needed by COSMOS PKN build (human + mouse)',
         'organisms': CORE,
