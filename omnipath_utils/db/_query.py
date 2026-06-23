@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import cache, lru_cache
 from collections import defaultdict
 
 from sqlalchemy import text
@@ -32,21 +33,83 @@ def _is_long_query(source_type: str, target_type: str) -> bool:
     return source_type in LONG_VALUE_TYPES or target_type in LONG_VALUE_TYPES
 
 
-def _normalise_long_ids(
+# Database-ID id_types whose stored canonical value keeps an uppercase CURIE
+# prefix (the "banana" problem -- ChEBI stores ``CHEBI:15377``, not ``15377``).
+_BANANA_PREFIXES: dict[str, str] = {'chebi': 'CHEBI'}
+
+
+@cache
+def _accepted_prefixes(id_type: str) -> frozenset[str]:
+    """Lowercase CURIE prefixes/aliases that may decorate an id of this type."""
+    try:
+        from omnipath_utils.mapping._id_types import IdTypeRegistry
+
+        info = IdTypeRegistry.get().info(id_type) or {}
+    except Exception:  # registry unavailable -> only the type name
+        info = {}
+    prefixes = {id_type.lower()}
+    cp = info.get('curie_prefix')
+    if cp:
+        prefixes.add(str(cp).lower())
+    for alias in info.get('aliases', []):
+        prefixes.add(str(alias).lower())
+    return frozenset(prefixes)
+
+
+def strip_curie(id_type: str, identifier: str) -> str:
+    """Normalise a CURIE-decorated identifier to the stored form for this type.
+
+    Removes a leading ``<prefix>:`` when ``<prefix>`` (case-insensitive) is a
+    known CURIE prefix / alias of ``id_type`` (so ``chebi:17612``, ``CHEBI:17612``
+    and ``17612`` all collapse), then re-applies the canonical uppercase prefix
+    for "banana" id_types (ChEBI). Identifiers without a matching prefix are
+    returned unchanged.
+    """
+    s = str(identifier).strip()
+    if ':' in s:
+        head, _, rest = s.partition(':')
+        if rest and head.lower() in _accepted_prefixes(id_type):
+            s = rest.strip()
+    banana = _BANANA_PREFIXES.get(id_type.lower())
+    if banana and s and not s.upper().startswith(banana + ':'):
+        s = f'{banana}:{s}'
+    return s
+
+
+def _lookup_key(source_type: str, identifier: str) -> str:
+    """The normalised storage key for one query identifier.
+
+    Names lowercased, structures verbatim, database IDs CURIE-stripped (+ HMDB
+    digit-padded).
+    """
+    if source_type in NAME_TYPES:
+        return str(identifier).strip().lower()
+    if source_type in STRUCTURE_TYPES:
+        return str(identifier).strip()
+    s = strip_curie(source_type, identifier)
+    if source_type == 'hmdb':
+        from omnipath_utils.mapping._special import normalise_hmdb
+        s = normalise_hmdb(s)
+    return s
+
+
+def _rekey(
+    result: dict,
     identifiers: list[str] | None,
     source_type: str,
-) -> list[str] | None:
-    """Normalise query keys for the long-value table.
+) -> dict[str, set[str]]:
+    """Map a result keyed by normalised lookup keys back to the original input.
 
-    Name source types are lowercased + whitespace-stripped (case-insensitive,
-    FR-002); structure types (and any database-ID source) are matched verbatim
-    (FR-019).
+    So the response echoes the identifier the user actually sent.
     """
     if identifiers is None:
-        return None
-    if source_type in NAME_TYPES:
-        return [i.strip().lower() for i in identifiers]
-    return identifiers
+        return dict(result)
+    out: dict[str, set[str]] = {}
+    for orig in identifiers:
+        hits = result.get(_lookup_key(source_type, orig))
+        if hits:
+            out.setdefault(orig, set()).update(hits)
+    return out
 
 
 def _ftp_table_exists(session: Session) -> bool:
@@ -219,46 +282,39 @@ def translate_ids(
     Returns:
         Tuple of (results dict, set of backend names used).
     """
+    # Normalise every query identifier to its storage key once: names
+    # lowercased, structures verbatim, database IDs CURIE-stripped (chebi:17612,
+    # CHEBI:17612, 17612 all collapse) + HMDB digit-padded. The response is
+    # re-keyed back to the caller's original inputs at the end.
+    norm_ids = (
+        [_lookup_key(source_type, i) for i in identifiers]
+        if identifiers is not None else None
+    )
+
     # Long-value (name / structure) queries route to the separate
-    # ``id_mapping_long`` table (R2). Names are matched case-insensitively,
-    # structures verbatim; chemicals are organism-agnostic (rows at tax 0), and
-    # this path never touches the UniProt FTP table (FR-018 holds trivially).
+    # ``id_mapping_long`` table (R2). Chemicals are organism-agnostic (rows at
+    # tax 0), and this path never touches the UniProt FTP table (FR-018 holds
+    # trivially).
     if _is_long_query(source_type, target_type):
-        long_ids = _normalise_long_ids(identifiers, source_type)
         result, backends_used = _query_table(
             session, f'{SCHEMA}.{_LONG_TABLE}',
-            long_ids, source_type, target_type, 0,
+            norm_ids, source_type, target_type, 0,
         )
-        # Names are stored/queried lowercased; re-key the response back to each
-        # caller's original-case input (so translate(['Taurine']) is keyed
-        # 'Taurine', not 'taurine'). Structures are verbatim -> no re-keying.
-        if identifiers is not None and source_type in NAME_TYPES:
-            rekeyed: dict[str, set[str]] = {}
-            for orig in identifiers:
-                hits = result.get(orig.strip().lower())
-                if hits:
-                    rekeyed.setdefault(orig, set()).update(hits)
-            return rekeyed, backends_used
-        return dict(result), backends_used
-
-    # Normalise HMDB IDs (old 5-digit → 7-digit format)
-    if source_type == 'hmdb' and identifiers is not None:
-        from omnipath_utils.mapping._special import normalise_hmdb
-        identifiers = [normalise_hmdb(i) for i in identifiers]
+        return _rekey(result, identifiers, source_type), backends_used
 
     if full_uniprot == 'only':
         result, backends_used = defaultdict(set), set()
     else:
         result, backends_used = _query_table(
             session, f'{SCHEMA}.id_mapping',
-            identifiers, source_type, target_type, ncbi_tax_id,
+            norm_ids, source_type, target_type, ncbi_tax_id,
         )
 
     # Decide whether (and for which identifiers) to consult the full table.
-    ftp_ids = identifiers
+    ftp_ids = norm_ids
     want_ftp = full_uniprot in ('both', 'only')
-    if full_uniprot == 'fallback' and identifiers is not None:
-        missing = [i for i in identifiers if i not in result]
+    if full_uniprot == 'fallback' and norm_ids is not None:
+        missing = [i for i in norm_ids if i not in result]
         if missing:
             want_ftp = True
             ftp_ids = missing
@@ -281,7 +337,7 @@ def translate_ids(
             result[key] |= vals  # set union -> deduplicated
         backends_used |= ftp_backends
 
-    return dict(result), backends_used
+    return _rekey(result, identifiers, source_type), backends_used
 
 
 def get_full_table(
@@ -297,6 +353,39 @@ def get_full_table(
     return result
 
 
+@lru_cache(maxsize=1)
+def _all_known_prefixes() -> frozenset[str]:
+    """Union of accepted CURIE prefixes across every id_type (cached)."""
+    try:
+        from omnipath_utils.mapping._id_types import IdTypeRegistry
+
+        reg = IdTypeRegistry.get()
+        out: set[str] = set()
+        for name in reg.all_names():
+            out |= _accepted_prefixes(name)
+        return frozenset(out)
+    except Exception:
+        return frozenset()
+
+
+def _identify_candidates(identifier: str) -> list[str]:
+    """Candidate stored forms to search for an identifier of unknown type.
+
+    The raw value, its lowercase (names), and -- when it carries a known CURIE
+    prefix -- the prefix-stripped value (and the ChEBI banana form).
+    """
+    s = str(identifier).strip()
+    cands = {s, s.lower()}
+    if ':' in s:
+        head, _, rest = s.partition(':')
+        rest = rest.strip()
+        if rest and head.lower() in _all_known_prefixes():
+            cands.add(rest)
+            if head.lower() == 'chebi':
+                cands.add(f'CHEBI:{rest}')
+    return [c for c in cands if c]
+
+
 def identify_ids(
     session: Session,
     identifiers: list[str],
@@ -304,8 +393,9 @@ def identify_ids(
 ) -> dict[str, list[dict]]:
     """Identify what type(s) each identifier belongs to.
 
-    Searches the id_mapping table as both source and target to find
-    which ID types contain each identifier.
+    Searches the id_mapping and id_mapping_long tables as both source and
+    target to find which ID types contain each identifier. CURIE-decorated
+    inputs (``chebi:17612``) are matched against their stored form.
 
     Returns:
         Dict mapping each identifier to a list of dicts with
@@ -315,6 +405,7 @@ def identify_ids(
 
     for identifier in identifiers:
         matches = []
+        cands = _identify_candidates(identifier)
 
         # Search as source
         rows = session.execute(
@@ -322,11 +413,11 @@ def identify_ids(
                 SELECT st.name, count(DISTINCT m.target_id)
                 FROM {SCHEMA}.id_mapping m
                 JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
-                WHERE m.source_id = :id
+                WHERE m.source_id = ANY(:ids)
                 AND (m.ncbi_tax_id = :tax OR m.ncbi_tax_id = 0)
                 GROUP BY st.name
             """),
-            {'id': identifier, 'tax': ncbi_tax_id},
+            {'ids': cands, 'tax': ncbi_tax_id},
         ).fetchall()
 
         for row in rows:
@@ -342,11 +433,11 @@ def identify_ids(
                 SELECT tt.name, count(DISTINCT m.source_id)
                 FROM {SCHEMA}.id_mapping m
                 JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
-                WHERE m.target_id = :id
+                WHERE m.target_id = ANY(:ids)
                 AND (m.ncbi_tax_id = :tax OR m.ncbi_tax_id = 0)
                 GROUP BY tt.name
             """),
-            {'id': identifier, 'tax': ncbi_tax_id},
+            {'ids': cands, 'tax': ncbi_tax_id},
         ).fetchall()
 
         for row in rows:
@@ -356,23 +447,22 @@ def identify_ids(
                 'mappings_count': row[1],
             })
 
-        # Also consult the long-value table (names / structures). Names are
-        # stored lowercased, so match both verbatim and lowercased keys.
+        # Also consult the long-value table (names / structures).
         long_rows = session.execute(
             text(f"""
                 SELECT st.name, 'source' AS role, count(DISTINCT m.target_id)
                 FROM {SCHEMA}.{_LONG_TABLE} m
                 JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
-                WHERE m.source_id IN (:id, :id_lower)
+                WHERE m.source_id = ANY(:ids)
                 GROUP BY st.name
                 UNION ALL
                 SELECT tt.name, 'target' AS role, count(DISTINCT m.source_id)
                 FROM {SCHEMA}.{_LONG_TABLE} m
                 JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
-                WHERE m.target_id = :id
+                WHERE m.target_id = ANY(:ids)
                 GROUP BY tt.name
             """),
-            {'id': identifier, 'id_lower': identifier.strip().lower()},
+            {'ids': cands},
         ).fetchall()
 
         for row in long_rows:
@@ -398,7 +488,14 @@ def get_all_mappings(
     Returns:
         Dict mapping each identifier to a dict of {target_type: [target_ids]}.
     """
-    result = {}
+    result: dict[str, dict[str, list[str]]] = {}
+
+    # Normalise each identifier to its storage key (CURIE-stripped for db-ids,
+    # lowercased for names) and map it back to the caller's original input.
+    norm: dict[str, str] = {}
+    for ident in identifiers:
+        norm.setdefault(_lookup_key(source_type, ident), ident)
+    norm_ids = list(norm.keys())
 
     rows = session.execute(
         text(f"""
@@ -411,25 +508,15 @@ def get_all_mappings(
             AND m.source_id = ANY(:ids)
             ORDER BY m.source_id, tt.name
         """),
-        {
-            'src_type': source_type,
-            'tax': ncbi_tax_id,
-            'ids': identifiers,
-        },
+        {'src_type': source_type, 'tax': ncbi_tax_id, 'ids': norm_ids},
     ).fetchall()
 
-    for row in rows:
-        src_id, tgt_type, tgt_id = row
-        result.setdefault(src_id, {}).setdefault(tgt_type, []).append(tgt_id)
+    for src_id, tgt_type, tgt_id in rows:
+        orig = norm.get(src_id, src_id)
+        result.setdefault(orig, {}).setdefault(tgt_type, []).append(tgt_id)
 
-    # Union the long-value table (names / structures). For a name source the
-    # stored key is lowercased, so match verbatim or lowercased; results are
-    # keyed back under the caller's original identifier.
+    # Union the long-value table (names / structures) for long source types.
     if source_type in LONG_VALUE_TYPES:
-        key_map: dict[str, str] = {}
-        for ident in identifiers:
-            key_map[ident] = ident
-            key_map[ident.strip().lower()] = ident
         long_rows = session.execute(
             text(f"""
                 SELECT m.source_id, tt.name, m.target_id
@@ -440,10 +527,10 @@ def get_all_mappings(
                 AND m.source_id = ANY(:ids)
                 ORDER BY m.source_id, tt.name
             """),
-            {'src_type': source_type, 'ids': list(key_map.keys())},
+            {'src_type': source_type, 'ids': norm_ids},
         ).fetchall()
         for src_id, tgt_type, tgt_id in long_rows:
-            orig = key_map.get(src_id, src_id)
+            orig = norm.get(src_id, src_id)
             bucket = result.setdefault(orig, {}).setdefault(tgt_type, [])
             if tgt_id not in bucket:
                 bucket.append(tgt_id)

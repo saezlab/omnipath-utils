@@ -43,20 +43,12 @@ def _name_rows_by_backend(session):
     return {r[0]: r[1] for r in rows}
 
 
-@pytest.mark.parametrize('backend', ['chebi', 'chembl', 'ramp', 'kegg_compound'])
+@pytest.mark.parametrize(
+    'backend', ['chebi', 'chembl', 'hmdb', 'ramp', 'kegg_compound'],
+)
 def test_c1_resource_has_name_rows(session, backend):
     counts = _name_rows_by_backend(session)
     assert counts.get(backend, 0) > 0, f'{backend} has no name rows'
-
-
-@pytest.mark.xfail(
-    reason='HMDB native hmdb_metabolites.zip is Cloudflare-blocked; HMDB name '
-           'coverage arrives via ChEBI xref + RaMP instead',
-    strict=False,
-)
-def test_c1_hmdb_native_name_rows(session):
-    counts = _name_rows_by_backend(session)
-    assert counts.get('hmdb', 0) > 0
 
 
 def test_c2_name_types_reach_two_targets_incl_chebi(session):
