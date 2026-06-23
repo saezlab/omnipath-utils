@@ -229,6 +229,16 @@ def translate_ids(
             session, f'{SCHEMA}.{_LONG_TABLE}',
             long_ids, source_type, target_type, 0,
         )
+        # Names are stored/queried lowercased; re-key the response back to each
+        # caller's original-case input (so translate(['Taurine']) is keyed
+        # 'Taurine', not 'taurine'). Structures are verbatim -> no re-keying.
+        if identifiers is not None and source_type in NAME_TYPES:
+            rekeyed: dict[str, set[str]] = {}
+            for orig in identifiers:
+                hits = result.get(orig.strip().lower())
+                if hits:
+                    rekeyed.setdefault(orig, set()).update(hits)
+            return rekeyed, backends_used
         return dict(result), backends_used
 
     # Normalise HMDB IDs (old 5-digit → 7-digit format)

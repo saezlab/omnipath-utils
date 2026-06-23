@@ -59,6 +59,33 @@ class TestLongRouting:
         assert spy[0]['ids'] == ['CHEBI:15377']
 
 
+class TestNameResultRekeying:
+    def test_response_keyed_by_original_input(self, monkeypatch):
+        # the long table stores/returns the lowercased key; the response must
+        # be re-keyed back to the caller's original-case identifier.
+        def fake_query_table(session, table, ids, src, tgt, tax):
+            res = defaultdict(set)
+            res['taurine'].add('CHEBI:15891')
+            return res, {'chebi'}
+
+        monkeypatch.setattr(q, '_query_table', fake_query_table)
+        for variant in ('Taurine', 'taurine', 'TAURINE', ' Taurine '):
+            out, _ = q.translate_ids(MagicMock(), [variant], 'name', 'chebi', 0)
+            assert out == {variant: {'CHEBI:15891'}}
+
+    def test_structure_keys_not_rekeyed(self, monkeypatch):
+        inchi = 'InChI=1S/H2O/h1H2'
+
+        def fake_query_table(session, table, ids, src, tgt, tax):
+            res = defaultdict(set)
+            res[inchi].add('CHEBI:15377')
+            return res, {'chebi'}
+
+        monkeypatch.setattr(q, '_query_table', fake_query_table)
+        out, _ = q.translate_ids(MagicMock(), [inchi], 'inchi', 'chebi', 0)
+        assert out == {inchi: {'CHEBI:15377'}}
+
+
 class TestDatabaseIdRouting:
     def test_chebi_to_hmdb_reads_id_mapping(self, spy):
         q.translate_ids(

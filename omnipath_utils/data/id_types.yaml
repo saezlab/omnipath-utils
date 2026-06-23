@@ -608,7 +608,6 @@ iupac:
   entity_type: small_molecule
   backends:
     hmdb: iupac_name
-    chebi: iupac
   aliases:
     - iupac_name
 
@@ -699,6 +698,8 @@ synonym:
   entity_type: small_molecule
   backends:
     hmdb: synonyms
+    chebi: synonyms
+    chembl: synonyms
   aliases:
     - synonyms
 

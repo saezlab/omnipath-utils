@@ -1017,7 +1017,6 @@ class DatabaseBuilder:
             ('chembl', self._long_chembl),
             ('kegg_compound', self._long_kegg),
             ('ramp', self._long_ramp),
-            ('structures', self._long_structures),
         ]
         for label, fn in builders:
             try:
@@ -1027,32 +1026,193 @@ class DatabaseBuilder:
 
         self._record_long_rollups()
 
-    # Per-resource long-value builders. Implemented across US1 (T015/T016) and
-    # US2 (T024/T025/T026/T027a); scaffolded here so the dispatcher and its
-    # build_info contract exist from the Foundational phase (T012).
+    def _emit_long_relations(
+        self,
+        rows,
+        backend: str,
+        name_cols: dict,
+        id_cols: dict,
+        struct_cols: dict | None = None,
+    ) -> int:
+        """Materialise the full cross-class relation set for one resource (R3).
+
+        From each raw row's name column(s) (``name_cols``: long-type -> column),
+        database-ID column(s) (``id_cols``; the first is the resource's own
+        primary id) and structure column(s) (``struct_cols``: inchi/smiles ->
+        column), emit every derivable pair across the three identifier classes
+        into ``id_mapping_long`` -- names<->ids, names<->structures,
+        id<->structures, structure<->structure -- not hub-only (FR-004/FR-019).
+        Database-ID<->database-ID pairs are intentionally excluded (they belong
+        in ``id_mapping`` via UniChem). Loads each slice via the idempotent
+        long-value COPY helper and returns the total row count.
+        """
+        from collections import defaultdict
+
+        from omnipath_utils.mapping.backends._inputs_v2_adapter import _as_values
+
+        struct_cols = struct_cols or {}
+        primary = next(iter(id_cols), None)
+        struct_types = list(struct_cols)
+        pairs: dict = defaultdict(lambda: defaultdict(set))
+
+        for row in rows:
+            names = {nt: _as_values(row.get(c)) for nt, c in name_cols.items()}
+            ids = {it: _as_values(row.get(c)) for it, c in id_cols.items()}
+            structs = {st: _as_values(row.get(c)) for st, c in struct_cols.items()}
+
+            # names -> every database id and structure (forward)
+            for nt, nvals in names.items():
+                for nv in nvals:
+                    for it, ivals in ids.items():
+                        if ivals:
+                            pairs[(nt, it)][nv].update(ivals)
+                    for st, svals in structs.items():
+                        if svals:
+                            pairs[(nt, st)][nv].update(svals)
+
+            # reverse from the resource's primary id -> names and structures
+            for pv in ids.get(primary, []):
+                for nt, nvals in names.items():
+                    if nvals:
+                        pairs[(primary, nt)][pv].update(nvals)
+                for st, svals in structs.items():
+                    if svals:
+                        pairs[(primary, st)][pv].update(svals)
+                        for sv in svals:
+                            pairs[(st, primary)][sv].add(pv)
+
+            # structure <-> structure (inchi <-> smiles)
+            if len(struct_types) == 2:
+                a, b = struct_types
+                for av in structs[a]:
+                    if structs[b]:
+                        pairs[(a, b)][av].update(structs[b])
+                for bv in structs[b]:
+                    if structs[a]:
+                        pairs[(b, a)][bv].update(structs[a])
+
+        total = 0
+        for (st, tt), data in pairs.items():
+            data = {k: v for k, v in data.items() if v}
+            if data:
+                total += self._populate_long_slice(data, st, tt, backend)
+        return total
+
+    # Per-resource long-value builders (US1 T015/T016, US2 T024/T025/T026/T027a).
     def _long_chebi(self):
-        """ChEBI name/synonym/iupac -> chebi (+ reverse). US1 (T015)."""
-        return
+        """ChEBI names/synonyms <-> chebi + xref ids + structures. US1 (T015)."""
+        from omnipath_utils.mapping.backends._inputs_v2_adapter import raw_rows
+
+        rows = raw_rows('chebi', 'molecules', self._effective_limit('chebi'))
+        n = self._emit_long_relations(
+            rows, 'chebi',
+            name_cols={'name': 'name', 'synonym': 'synonyms'},
+            id_cols={
+                'chebi': 'chebi_id', 'hmdb': 'hmdb', 'kegg': 'kegg_compound',
+                'pubchem': 'pubchem_compound', 'lipidmaps': 'lipidmaps',
+            },
+            struct_cols={'inchi': 'inchi', 'smiles': 'smiles'},
+        )
+        _log.info('chemical_long chebi: %d rows', n)
 
     def _long_hmdb(self):
-        """HMDB name/iupac/traditional/synonym -> chebi/hmdb. US1 (T016)."""
-        return
+        """HMDB synonyms -> chebi/hmdb. US1 (T016).
+
+        HMDB's native ``hmdb_metabolites.zip`` is behind Cloudflare and may fail
+        to download; the dispatcher isolates that failure and HMDB coverage
+        still arrives via ChEBI's ``hmdb`` xref and RaMP's HMDB-derived
+        synonyms.
+        """
+        from pypath.inputs.hmdb import metabolites as hmdb_meta
+
+        sc = hmdb_meta.synonyms_chebi()  # {synonym: chebi or {chebi}}
+        syn_chebi: dict = {}
+        for syn, chebi in sc.items():
+            vals = chebi if isinstance(chebi, (set, list, tuple)) else {chebi}
+            syn_chebi.setdefault(str(syn), set()).update(
+                f'CHEBI:{v}' if not str(v).startswith('CHEBI:') else str(v)
+                for v in vals if v
+            )
+        n = self._populate_long_slice(syn_chebi, 'synonym', 'chebi', 'hmdb')
+        _log.info('chemical_long hmdb: %d synonym->chebi rows', n)
 
     def _long_chembl(self):
-        """ChEMBL name (pref_name) + synonym -> chembl/chebi. US2 (T024)."""
-        return
+        """ChEMBL name/synonym <-> chembl/chebi + structures. US2 (T024)."""
+        from omnipath_utils.mapping.backends._inputs_v2_adapter import raw_rows
+
+        rows = raw_rows('chembl', 'molecules', self._effective_limit('chembl'))
+        name_cols = {'name': 'pref_name'}
+        if rows and 'synonyms' in rows[0]:
+            name_cols['synonym'] = 'synonyms'
+        n = self._emit_long_relations(
+            rows, 'chembl',
+            name_cols=name_cols,
+            id_cols={'chembl': 'chembl_id', 'chebi': 'chebi_id'},
+            struct_cols={'inchi': 'standard_inchi', 'smiles': 'canonical_smiles'},
+        )
+        _log.info('chemical_long chembl: %d rows', n)
 
     def _long_kegg(self):
-        """KEGG compound name -> kegg/chebi. US2 (T025)."""
-        return
+        """KEGG compound names <-> kegg/chebi. US2 (T025)."""
+        from pypath.inputs.kegg import kegg_compound_chebi, kegg_compound_names
+
+        names = kegg_compound_names()      # {kegg_id: [names]}
+        kc = kegg_compound_chebi()         # {kegg_id: 'CHEBI:nnn'}
+        name_kegg: dict = {}
+        name_chebi: dict = {}
+        kegg_name: dict = {}
+        for kid, nlist in names.items():
+            nlist = nlist if isinstance(nlist, (list, set, tuple)) else [nlist]
+            kegg_name.setdefault(kid, set()).update(str(n) for n in nlist if n)
+            for nm in nlist:
+                if not nm:
+                    continue
+                name_kegg.setdefault(str(nm), set()).add(kid)
+                if kid in kc:
+                    name_chebi.setdefault(str(nm), set()).add(kc[kid])
+        total = 0
+        total += self._populate_long_slice(name_kegg, 'name', 'kegg', 'kegg_compound')
+        total += self._populate_long_slice(kegg_name, 'kegg', 'name', 'kegg_compound')
+        total += self._populate_long_slice(name_chebi, 'name', 'chebi', 'kegg_compound')
+        _log.info('chemical_long kegg_compound: %d rows', total)
+
+    @staticmethod
+    def _norm_chem_id(id_type: str, value: str) -> str:
+        """Normalise a RaMP curie to the DB's id format (e.g. CHEBI:15377)."""
+        v = str(value)
+        if ':' in v:
+            v = v.split(':', 1)[1]
+        if id_type == 'chebi':
+            return f'CHEBI:{v}'
+        return v
 
     def _long_ramp(self):
-        """RaMP synonym -> chebi/hmdb (analytesynonym). US2 (T026)."""
-        return
+        """RaMP synonyms <-> chebi/hmdb (analytesynonym). US2 (T026).
 
-    def _long_structures(self):
-        """Structure (inchi/smiles) <-> db-id/name, curated resources. US2 (T027a)."""
-        return
+        ``ramp_synonym_mapping(hub)`` returns ``{hub_id: {synonyms}}``; emit both
+        directions (synonym->hub and hub->synonym), normalising the hub id to the
+        DB format.
+        """
+        from pypath.inputs.ramp import ramp_synonym_mapping
+
+        total = 0
+        for hub in ('chebi', 'hmdb'):
+            try:
+                data = ramp_synonym_mapping(hub, curies=True)  # {hub_id:{syn}}
+            except Exception as e:
+                _log.debug('RaMP synonym<->%s failed: %s', hub, e)
+                continue
+            syn_hub: dict = {}
+            hub_syn: dict = {}
+            for hid, syns in data.items():
+                hid_n = self._norm_chem_id(hub, hid)
+                clean = {str(s) for s in syns if s}
+                hub_syn.setdefault(hid_n, set()).update(clean)
+                for s in clean:
+                    syn_hub.setdefault(s, set()).add(hid_n)
+            total += self._populate_long_slice(syn_hub, 'synonym', hub, 'ramp')
+            total += self._populate_long_slice(hub_syn, hub, 'synonym', 'ramp')
+        _log.info('chemical_long ramp: %d synonym rows', total)
 
     def _record_long_rollups(self):
         """Write per-class roll-up counts for the long-value layer to
