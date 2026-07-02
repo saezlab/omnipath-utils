@@ -445,6 +445,72 @@ class DatabaseBuilder:
             time.time() - start,
         )
 
+    def load_uniprot_sec_ac(self):
+        """Load the secondary -> primary UniProt AC map, organism-agnostic (tax 0).
+
+        ``sec_ac.txt`` is a single global UniProt file (no organism), so it is
+        loaded once at ``ncbi_tax_id = 0`` rather than per-organism (adding it to
+        the per-organism ``PROTEIN_CORE`` fan-out would run it once per taxon and
+        proteome-filter each, which is wrong). Every UniProt-bearing build needs
+        it: the resolver views normalise every UniProt to its primary accession
+        via this slice so the delivered mapping tables are primary-only (ADR 0006
+        -- Utils owns normalization; the "uniprot cleanup" is always part of
+        dealing with UniProts). Idempotent (DELETE + COPY the tax-0 slice).
+        """
+        from pypath.inputs.uniprot import get_uniprot_sec
+        from omnipath_utils.db._connection import get_connection
+
+        with Session(self.engine) as session:
+            src = session.query(IdType).filter_by(name='uniprot-sec').first()
+            tgt = session.query(IdType).filter_by(name='uniprot-pri').first()
+            backend = session.query(Backend).filter_by(name='uniprot').first()
+            if not src or not tgt or not backend:
+                _log.error(
+                    'load_uniprot_sec_ac: uniprot-sec/uniprot-pri id_type or '
+                    'uniprot backend missing; skipping'
+                )
+                return
+            src_id, tgt_id, backend_id = src.id, tgt.id, backend.id
+
+        start = time.time()
+        # organism=None -> every secondary/primary pair, no proteome filter.
+        pairs = list(get_uniprot_sec(organism=None))
+        if self._max_records is not None:
+            pairs = pairs[: self._max_records]
+
+        with Session(self.engine) as session:
+            session.execute(
+                text(
+                    f'DELETE FROM {SCHEMA}.id_mapping WHERE source_type_id = :s '
+                    'AND target_type_id = :t AND ncbi_tax_id = 0 '
+                    'AND backend_id = :b'
+                ),
+                {'s': src_id, 't': tgt_id, 'b': backend_id},
+            )
+            session.commit()
+
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, '
+                    'ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
+                ) as copy:
+                    for sec, pri in pairs:
+                        copy.write_row(
+                            (src_id, tgt_id, 0, sec[:64], pri[:64], backend_id)
+                        )
+                        n += 1
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d secondary->primary UniProt AC pairs (tax 0) in %.1fs',
+            n, time.time() - start,
+        )
+
     def create_resolver_views(self):
         """(Re)create the canonical resolver projection views (SQL DDL).
 
@@ -523,6 +589,13 @@ class DatabaseBuilder:
             self.populate_reflists_global_swissprot()
         except Exception as e:
             _log.error('Failed global SwissProt reflist: %s', e)
+
+        # Secondary->primary UniProt normalization, always part of handling
+        # proteins (ADR 0006). Organism-agnostic, loaded once at tax 0.
+        try:
+            self.load_uniprot_sec_ac()
+        except Exception as e:
+            _log.error('Failed to load sec_ac (secondary->primary UniProt): %s', e)
 
     # FTP idmapping labels NOT loaded by default (annotation/clustering, not ID
     # translation; they 10x the table). Opt in via OMNIPATH_BUILD_FTP_HEAVY_TYPES.
@@ -766,6 +839,13 @@ class DatabaseBuilder:
             conn.close()
             raise
         conn.close()
+
+        # Secondary->primary UniProt normalization (ADR 0006) must exist before
+        # the resolver views, which read it to canonicalise every UniProt.
+        try:
+            self.load_uniprot_sec_ac()
+        except Exception as e:
+            _log.error('Failed to load sec_ac (secondary->primary UniProt): %s', e)
 
         # The resolver projection reads id_mapping_ftp, so (re)create it now.
         self.create_resolver_views()
@@ -1789,9 +1869,17 @@ class DatabaseBuilder:
         organisms = config['organisms'] or [9606]
 
         if config.get('ftp'):
-            self.populate_from_ftp()
+            self.populate_from_ftp()  # loads sec_ac + resolver views internally
         else:
             self._run_mappings_parallel(config['mappings'], organisms)
+            # Secondary->primary UniProt normalization, always part of handling
+            # proteins (ADR 0006); organism-agnostic (tax 0). Skipped for the
+            # chemical-only preset (no protein mappings).
+            if config['mappings']:
+                try:
+                    self.load_uniprot_sec_ac()
+                except Exception as e:
+                    _log.error('Failed to load sec_ac: %s', e)
 
         if config.get('metabolite'):
             self.populate_metabolites()

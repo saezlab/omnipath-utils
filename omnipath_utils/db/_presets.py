@@ -45,8 +45,9 @@ MIRNA = [
 
 # COSMOS PKN-specific protein mappings (cleanup pipeline)
 COSMOS_CLEANUP = [
-    # Secondary -> primary UniProt AC resolution
-    ('uniprot-sec', 'uniprot-pri', 'uniprot'),
+    # Secondary -> primary UniProt AC resolution is loaded organism-agnostically
+    # (tax 0) by DatabaseBuilder.load_uniprot_sec_ac() for every protein build
+    # (ADR 0006), not as a per-organism mapping pair here.
     # UniProt -> gene symbol (for TrEMBL -> SwissProt resolution)
     ('uniprot', 'genesymbol', 'uniprot'),
     # SwissProt lookup (already in PROTEIN_CORE via genesymbol -> swissprot)

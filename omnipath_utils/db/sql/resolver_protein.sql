@@ -104,6 +104,14 @@ up_other AS NOT MATERIALIZED (
     JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
     JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id
      AND tt.name IN ('genesymbol', 'ensg', 'ensp')
+),
+-- secondary -> primary UniProt AC (organism-agnostic, tax 0; ADR 0006). Lets a
+-- resource that supplies a secondary accession still anchor to the gene.
+sec_pri AS NOT MATERIALIZED (
+    SELECT m.source_id AS sec, m.target_id AS pri
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot-sec'
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'uniprot-pri'
 )
 -- other id (genesymbol / ensg / ensp) -> entrez, via shared uniprot
 SELECT DISTINCT o.ncbi_tax_id, o.source_type, o.source_id, e.entrez
@@ -113,6 +121,13 @@ WHERE o.source_id IS NOT NULL
 UNION
 -- uniprot -> entrez (the accession itself as a source id)
 SELECT DISTINCT ncbi_tax_id, 'uniprot', uniprot, entrez FROM up_entrez
+UNION
+-- secondary uniprot AC -> entrez (normalise sec->pri first). uniprot is a
+-- protein, so uniprot->entrez is a legitimate protein->gene hop.
+SELECT DISTINCT e.ncbi_tax_id, 'uniprot', sp.sec, e.entrez
+FROM up_entrez e
+JOIN sec_pri sp ON sp.pri = e.uniprot
+WHERE sp.sec IS NOT NULL
 UNION
 -- entrez -> entrez (identity)
 SELECT DISTINCT ncbi_tax_id, 'entrez', entrez, entrez FROM up_entrez;
