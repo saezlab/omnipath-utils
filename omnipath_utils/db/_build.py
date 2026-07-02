@@ -686,7 +686,15 @@ class DatabaseBuilder:
                     'lm.id_type_id::smallint AS target_type_id, '
                     'COALESCE(t.taxid, 0)::integer AS ncbi_tax_id, '
                     'left(s.ac, 64)::varchar(64) AS source_id, '
-                    'left(s.id_value, 64)::varchar(64) AS target_id, '
+                    # Normalise Ensembl IDs to versionless (ADR 0006): the FTP
+                    # file carries `.N` version suffixes (ENSG/ENST/ENSP) but
+                    # resources supply versionless IDs, so a versioned target
+                    # would never join. Strip the trailing version here so the
+                    # delivered mapping table is already canonical.
+                    "left(CASE WHEN s.id_type_label IN "
+                    "('Ensembl', 'Ensembl_TRS', 'Ensembl_PRO') "
+                    "THEN regexp_replace(s.id_value, '\\.[0-9]+$', '') "
+                    "ELSE s.id_value END, 64)::varchar(64) AS target_id, "
                     f'{backend_id}::smallint AS backend_id '
                     f'FROM {stg} s '
                     f'JOIN {lmap} lm USING (id_type_label) '
