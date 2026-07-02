@@ -19,7 +19,24 @@
 
 CREATE SCHEMA IF NOT EXISTS omnipath_utils;
 
-CREATE OR REPLACE VIEW omnipath_utils.resolver_chemical AS
+-- MATERIALIZED (2026-07-02): as a plain view this ~124M-row projection (PubChem
+-- cid->InChIKey + bridges) expands its UNION ALL + id_mapping joins on every read,
+-- which stalled STITCH canonicalization (the build COPYs the whole chemical
+-- resolver for CID endpoints). Materialise + index so the read is a sequential
+-- table scan and keyed lookups (by source_type, source_id) are index probes.
+-- Rebuilt on reload alongside resolver_gene (create_resolver_views). Drop whichever
+-- relkind exists (IF EXISTS does not cover a view<->matview mismatch).
+DO $$
+DECLARE k "char";
+BEGIN
+  SELECT c.relkind INTO k FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'omnipath_utils' AND c.relname = 'resolver_chemical';
+  IF k = 'v' THEN EXECUTE 'DROP VIEW omnipath_utils.resolver_chemical CASCADE';
+  ELSIF k = 'm' THEN EXECUTE 'DROP MATERIALIZED VIEW omnipath_utils.resolver_chemical CASCADE';
+  END IF;
+END $$;
+CREATE MATERIALIZED VIEW omnipath_utils.resolver_chemical AS
 WITH ik AS (SELECT id FROM omnipath_utils.id_type WHERE name = 'inchikey'),
      pc AS (SELECT id FROM omnipath_utils.id_type WHERE name = 'pubchem'),
      ce AS (SELECT id FROM omnipath_utils.id_type WHERE name = 'chebi'),
@@ -65,3 +82,7 @@ WHERE source_id IS NOT NULL AND inchikey IS NOT NULL
 UNION ALL
 SELECT source_type, source_id, inchikey FROM bridge_chebi
 WHERE source_id IS NOT NULL AND inchikey IS NOT NULL;
+
+-- Keyed-lookup index: the build probes by (source_type, source_id).
+CREATE INDEX IF NOT EXISTS resolver_chemical_key_idx
+    ON omnipath_utils.resolver_chemical (source_type, source_id);
