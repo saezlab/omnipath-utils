@@ -79,58 +79,142 @@ WHERE ((grp_has_swissprot AND is_swissprot) OR NOT grp_has_swissprot)
 -- Gene-anchor projection (spec 002, M-Genes / US7 / FR-026): maps any in-scope
 -- source identifier to its NCBI Gene (Entrez) anchor, per taxon. The gene is the
 -- canonical collapsing identity; entrez is the anchor (R17 — Entrez covers 50,018
--- taxa vs Ensembl's 240). Bridged through UniProt (the FTP hub: uniprot -> X), so
--- genesymbol / ensg / ensp / uniprot all resolve to the gene's entrez. entrez maps
+-- taxa vs Ensembl's 240). Gene ids anchor through GENE space via an ensg<->entrez
+-- bridge (see the bridging note on the materialised view below), not by routing
+-- through UniProt; uniprot -> entrez stays a direct protein->gene hop. entrez maps
 -- to itself. (Organisms with no entrez fall back to ensg/genesymbol — a follow-up;
 -- entrez-anchor first covers the working set.)
 --
 -- Columns: (ncbi_tax_id, source_type, source_id, entrez). omnipath-build reads this
--- via DuckDB ATTACH with the taxon filter pushed down.
+-- via DuckDB ATTACH; it is a MATERIALIZED, indexed table (keyed lookups, not a scan).
 
-CREATE OR REPLACE VIEW omnipath_utils.resolver_gene AS
--- NOT MATERIALIZED forces the planner to inline these CTEs so an outer
--- ``WHERE ncbi_tax_id = …`` pushes down into the id_mapping_ftp covering index
--- (otherwise a multiply-referenced CTE is materialised and scans every taxon).
-WITH up_entrez AS NOT MATERIALIZED (
+-- MATERIALIZED (2026-07-02): resolver_gene is a materialized, indexed table, not a
+-- view. The bridge derivation below is too expensive to run per query — as a view
+-- it took ~127 s/taxon (the multiply-referenced bridge defeats taxon pushdown),
+-- wrecking the per-taxon / keyed-lookup reads the build does. Materialising computes
+-- it once after the FTP load and serves keyed lookups from the index, so the build
+-- probes the *normalised, bridged* resolver at id_mapping speed (rather than
+-- bypassing to raw id_mapping and losing the sec_ac + ENSG-bridge coverage).
+-- Rebuilt on reload: a full FTP load DROPs id_mapping_ftp CASCADE (dropping this),
+-- and create_resolver_views() recreates + repopulates it.
+-- Drop whichever kind currently exists (plain view from the pre-materialised era,
+-- or an earlier materialised view) — IF EXISTS does not cover a relkind mismatch.
+DO $$
+DECLARE k "char";
+BEGIN
+  SELECT c.relkind INTO k FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'omnipath_utils' AND c.relname = 'resolver_gene';
+  IF k = 'v' THEN EXECUTE 'DROP VIEW omnipath_utils.resolver_gene CASCADE';
+  ELSIF k = 'm' THEN EXECUTE 'DROP MATERIALIZED VIEW omnipath_utils.resolver_gene CASCADE';
+  END IF;
+END $$;
+CREATE MATERIALIZED VIEW omnipath_utils.resolver_gene AS
+--
+-- Bridging strategy (2026-07-02): gene identifiers anchor through **gene space**,
+-- not protein space. Routing a gene id through UniProt (genesymbol/ensg/ensp ->
+-- uniprot -> entrez) is gene->protein->gene and silently drops any gene copy
+-- whose specific UniProt entry lacks the Entrez (GeneID) cross-reference — it
+-- requires ONE UniProt row to carry both the source id and the Entrez. Instead we
+-- build an ensg<->entrez bridge over *any* shared UniProt, then map ensp/genesymbol
+-- to their ensg and bridge to entrez (protein->gene->gene, never gene->protein->gene).
+-- Measured on utils2 (human): the ENSP path jumps 44,892 -> 179,772 (~4x, +134,880).
+-- uniprot->entrez stays direct (UniProt *is* a protein, so protein->gene is fine).
+-- The true gene-space source (NCBI gene2ensembl / gene_info, independent of UniProt)
+-- is a follow-up that would also recover genes with no UniProt entry at all.
+WITH up_entrez AS (
     SELECT DISTINCT m.ncbi_tax_id, m.source_id AS uniprot, m.target_id AS entrez
     FROM omnipath_utils.id_mapping_ftp m
     JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
     JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'entrez'
 ),
-up_other AS NOT MATERIALIZED (
-    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS uniprot,
-           tt.name AS source_type, m.target_id AS source_id
+up_ensg AS (
+    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS uniprot, m.target_id AS ensg
     FROM omnipath_utils.id_mapping_ftp m
     JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
-    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id
-     AND tt.name IN ('genesymbol', 'ensg', 'ensp')
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'ensg'
+),
+up_ensp AS (
+    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS uniprot, m.target_id AS ensp
+    FROM omnipath_utils.id_mapping_ftp m
+    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'ensp'
+),
+up_symbol AS (
+    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS uniprot, m.target_id AS genesymbol
+    FROM omnipath_utils.id_mapping_ftp m
+    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'genesymbol'
 ),
 -- secondary -> primary UniProt AC (organism-agnostic, tax 0; ADR 0006). Lets a
 -- resource that supplies a secondary accession still anchor to the gene.
-sec_pri AS NOT MATERIALIZED (
+sec_pri AS (
     SELECT m.source_id AS sec, m.target_id AS pri
     FROM omnipath_utils.id_mapping m
     JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot-sec'
     JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'uniprot-pri'
+),
+-- gene-space bridge: ensg -> entrez over ANY shared UniProt (the coverage win).
+ensg_entrez AS (
+    SELECT DISTINCT g.ncbi_tax_id, g.ensg, e.entrez
+    FROM up_ensg g
+    JOIN up_entrez e ON e.ncbi_tax_id = g.ncbi_tax_id AND e.uniprot = g.uniprot
 )
--- other id (genesymbol / ensg / ensp) -> entrez, via shared uniprot
-SELECT DISTINCT o.ncbi_tax_id, o.source_type, o.source_id, e.entrez
-FROM up_other o
-JOIN up_entrez e ON e.ncbi_tax_id = o.ncbi_tax_id AND e.uniprot = o.uniprot
-WHERE o.source_id IS NOT NULL
+-- entrez -> entrez (identity). Aliases here name the view columns for all UNION
+-- branches (ncbi_tax_id, source_type, source_id, entrez).
+SELECT DISTINCT ncbi_tax_id, 'entrez' AS source_type, entrez AS source_id, entrez
+FROM up_entrez
 UNION
--- uniprot -> entrez (the accession itself as a source id)
+-- ensg -> entrez (gene space)
+SELECT DISTINCT ncbi_tax_id, 'ensg', ensg, entrez FROM ensg_entrez
+UNION
+-- ensp -> ensg -> entrez (protein -> gene -> gene; NOT via uniprot)
+SELECT DISTINCT p.ncbi_tax_id, 'ensp', p.ensp, ge.entrez
+FROM up_ensp p
+JOIN up_ensg g  ON g.ncbi_tax_id = p.ncbi_tax_id AND g.uniprot = p.uniprot
+JOIN ensg_entrez ge ON ge.ncbi_tax_id = p.ncbi_tax_id AND ge.ensg = g.ensg
+UNION
+-- genesymbol -> ensg -> entrez (prefer gene space over symbol->uniprot->entrez)
+SELECT DISTINCT s.ncbi_tax_id, 'genesymbol', s.genesymbol, ge.entrez
+FROM up_symbol s
+JOIN up_ensg g  ON g.ncbi_tax_id = s.ncbi_tax_id AND g.uniprot = s.uniprot
+JOIN ensg_entrez ge ON ge.ncbi_tax_id = s.ncbi_tax_id AND ge.ensg = g.ensg
+UNION
+-- uniprot -> entrez (the accession itself; uniprot IS a protein, direct is fine),
+-- plus uniprot -> ensg -> entrez to recover entries with an ensg but no GeneID.
 SELECT DISTINCT ncbi_tax_id, 'uniprot', uniprot, entrez FROM up_entrez
 UNION
--- secondary uniprot AC -> entrez (normalise sec->pri first). uniprot is a
--- protein, so uniprot->entrez is a legitimate protein->gene hop.
+SELECT DISTINCT g.ncbi_tax_id, 'uniprot', g.uniprot, ge.entrez
+FROM up_ensg g
+JOIN ensg_entrez ge ON ge.ncbi_tax_id = g.ncbi_tax_id AND ge.ensg = g.ensg
+UNION
+-- secondary uniprot AC -> primary -> entrez (direct + via the ensg bridge).
 SELECT DISTINCT e.ncbi_tax_id, 'uniprot', sp.sec, e.entrez
 FROM up_entrez e
 JOIN sec_pri sp ON sp.pri = e.uniprot
 WHERE sp.sec IS NOT NULL
 UNION
--- entrez -> entrez (identity)
-SELECT DISTINCT ncbi_tax_id, 'entrez', entrez, entrez FROM up_entrez;
+SELECT DISTINCT g.ncbi_tax_id, 'uniprot', sp.sec, ge.entrez
+FROM up_ensg g
+JOIN sec_pri sp ON sp.pri = g.uniprot
+JOIN ensg_entrez ge ON ge.ncbi_tax_id = g.ncbi_tax_id AND ge.ensg = g.ensg
+WHERE sp.sec IS NOT NULL
+UNION
+-- genesymbol -> entrez DIRECT via a single shared uniprot (supplement to the ensg
+-- path): recovers symbols whose UniProt carries a GeneID but no ensg, which the
+-- ensg-only route drops (~660 human). Preferred path is still gene-space (ensg);
+-- this only ADDS, never removes. True symbol<->entrez needs NCBI gene_info (follow-up).
+SELECT DISTINCT s.ncbi_tax_id, 'genesymbol', s.genesymbol, e.entrez
+FROM up_symbol s
+JOIN up_entrez e ON e.ncbi_tax_id = s.ncbi_tax_id AND e.uniprot = s.uniprot;
+
+-- Keyed-lookup index: the build probes by (taxon, source_type, source_id); this
+-- makes each shard's needed ids index scans on the materialised table.
+CREATE INDEX IF NOT EXISTS resolver_gene_key_idx
+    ON omnipath_utils.resolver_gene (ncbi_tax_id, source_type, source_id);
+-- Reverse probe (by gene) for entrez-anchored lookups.
+CREATE INDEX IF NOT EXISTS resolver_gene_entrez_idx
+    ON omnipath_utils.resolver_gene (ncbi_tax_id, entrez);
 
 
 -- Global (taxon-agnostic) UniProt/Entrez gene anchor (spec 002, T069 / R25 / US7).
