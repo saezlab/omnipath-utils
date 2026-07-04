@@ -249,12 +249,65 @@ WITH sec_pri AS (
     JOIN omnipath_utils.id_type tt
       ON m.target_type_id = tt.id AND tt.name = 'uniprot-pri'
 ),
-protein_key AS (
+protein_source_raw AS (
+    -- full-UniProt: native uniprot -> X, inverted to X -> uniprot
+    SELECT
+      m.ncbi_tax_id,
+      tt.name AS source_type,
+      m.target_id AS source_id,
+      m.source_id AS ac
+    FROM omnipath_utils.id_mapping_ftp m
+    JOIN omnipath_utils.id_type st
+      ON m.source_type_id = st.id AND st.name = 'uniprot'
+    JOIN omnipath_utils.id_type tt
+      ON m.target_type_id = tt.id
+     AND tt.name IN (
+       'genesymbol', 'ensg', 'ensp', 'entrez', 'refseqp', 'uniprot_entry'
+     )
+    UNION ALL
+    -- curated, native uniprot -> X (inverted)
+    SELECT
+      m.ncbi_tax_id,
+      tt.name AS source_type,
+      m.target_id AS source_id,
+      m.source_id AS ac
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st
+      ON m.source_type_id = st.id AND st.name = 'uniprot'
+    JOIN omnipath_utils.id_type tt
+      ON m.target_type_id = tt.id
+     AND tt.name IN ('genesymbol', 'ensg', 'ensp', 'entrez', 'refseqp')
+    UNION ALL
+    -- curated, forward X -> uniprot
+    SELECT
+      m.ncbi_tax_id,
+      st.name AS source_type,
+      m.source_id AS source_id,
+      m.target_id AS ac
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st
+      ON m.source_type_id = st.id
+     AND st.name IN ('genesymbol', 'ensg', 'ensp', 'entrez', 'refseqp')
+    JOIN omnipath_utils.id_type tt
+      ON m.target_type_id = tt.id AND tt.name = 'uniprot'
+    UNION ALL
+    -- primary UniProt accession identity
+    SELECT DISTINCT
+      m.ncbi_tax_id,
+      'uniprot' AS source_type,
+      m.source_id AS source_id,
+      m.source_id AS ac
+    FROM omnipath_utils.id_mapping_ftp m
+    JOIN omnipath_utils.id_type st
+      ON m.source_type_id = st.id AND st.name = 'uniprot'
+    WHERE m.source_id IS NOT NULL
+    UNION ALL
+    -- secondary UniProt accession -> primary UniProt accession
     SELECT
       NULLIF(m.ncbi_tax_id, 0) AS ncbi_tax_id,
       'uniprot' AS source_type,
       m.source_id AS source_id,
-      m.target_id AS primary_uniprot
+      m.target_id AS ac
     FROM omnipath_utils.id_mapping m
     JOIN omnipath_utils.id_type st
       ON m.source_type_id = st.id AND st.name = 'uniprot-sec'
@@ -262,16 +315,42 @@ protein_key AS (
       ON m.target_type_id = tt.id AND tt.name = 'uniprot-pri'
     WHERE m.source_id IS NOT NULL
       AND m.target_id IS NOT NULL
-    UNION
+),
+protein_key_normalized AS (
+    SELECT
+      r.ncbi_tax_id,
+      r.source_type,
+      r.source_id,
+      COALESCE(sp.pri, r.ac) AS primary_uniprot
+    FROM protein_source_raw r
+    LEFT JOIN sec_pri sp ON sp.sec = r.ac
+    WHERE r.source_id IS NOT NULL
+      AND r.ac IS NOT NULL
+),
+protein_key_flagged AS (
+    SELECT
+      pk.ncbi_tax_id,
+      pk.source_type,
+      pk.source_id,
+      pk.primary_uniprot,
+      (r.identifier IS NOT NULL) AS is_swissprot,
+      bool_or(r.identifier IS NOT NULL) OVER (
+        PARTITION BY pk.ncbi_tax_id, pk.source_type, pk.source_id
+      ) AS key_has_swissprot
+    FROM protein_key_normalized pk
+    LEFT JOIN omnipath_utils.reflist r
+      ON r.list_name = 'swissprot'
+     AND r.identifier = pk.primary_uniprot
+),
+protein_key AS (
     SELECT DISTINCT
-      m.ncbi_tax_id,
-      'uniprot' AS source_type,
-      m.source_id AS source_id,
-      m.source_id AS primary_uniprot
-    FROM omnipath_utils.id_mapping_ftp m
-    JOIN omnipath_utils.id_type st
-      ON m.source_type_id = st.id AND st.name = 'uniprot'
-    WHERE m.source_id IS NOT NULL
+      ncbi_tax_id,
+      source_type,
+      source_id,
+      primary_uniprot
+    FROM protein_key_flagged
+    WHERE ((key_has_swissprot AND is_swissprot) OR NOT key_has_swissprot)
+      AND primary_uniprot ~ '^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$'
 ),
 entrez_candidate AS (
     SELECT
@@ -287,16 +366,16 @@ entrez_candidate AS (
     -- UniProt should resolve to the same gene (e.g. Cngb1 -> A0A8I5ZN27 and
     -- Cngb1 -> Entrez).
     SELECT
-      rp.ncbi_tax_id,
+      pk.ncbi_tax_id,
       'uniprot' AS source_type,
-      rp.uniprot AS source_id,
+      pk.primary_uniprot AS source_id,
       rg.entrez
-    FROM omnipath_utils.resolver_protein rp
+    FROM protein_key pk
     JOIN omnipath_utils.resolver_gene rg
-      ON rg.ncbi_tax_id = rp.ncbi_tax_id
-     AND rg.source_type = rp.source_type
-     AND rg.source_id = rp.source_id
-    WHERE rp.uniprot IS NOT NULL
+      ON rg.ncbi_tax_id = pk.ncbi_tax_id
+     AND rg.source_type = pk.source_type
+     AND rg.source_id = pk.source_id
+    WHERE pk.primary_uniprot IS NOT NULL
       AND rg.entrez IS NOT NULL
     UNION
     -- Secondary accessions inherit the primary accession's gene anchor.
