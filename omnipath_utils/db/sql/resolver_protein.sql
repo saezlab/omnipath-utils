@@ -251,15 +251,6 @@ WITH sec_pri AS (
 ),
 protein_key AS (
     SELECT
-      rp.ncbi_tax_id,
-      rp.source_type,
-      rp.source_id,
-      rp.uniprot AS primary_uniprot
-    FROM omnipath_utils.resolver_protein rp
-    WHERE rp.source_id IS NOT NULL
-      AND rp.uniprot IS NOT NULL
-    UNION
-    SELECT
       NULLIF(m.ncbi_tax_id, 0) AS ncbi_tax_id,
       'uniprot' AS source_type,
       m.source_id AS source_id,
@@ -271,6 +262,16 @@ protein_key AS (
       ON m.target_type_id = tt.id AND tt.name = 'uniprot-pri'
     WHERE m.source_id IS NOT NULL
       AND m.target_id IS NOT NULL
+    UNION
+    SELECT DISTINCT
+      m.ncbi_tax_id,
+      'uniprot' AS source_type,
+      m.source_id AS source_id,
+      m.source_id AS primary_uniprot
+    FROM omnipath_utils.id_mapping_ftp m
+    JOIN omnipath_utils.id_type st
+      ON m.source_type_id = st.id AND st.name = 'uniprot'
+    WHERE m.source_id IS NOT NULL
 ),
 entrez_candidate AS (
     SELECT
@@ -282,32 +283,21 @@ entrez_candidate AS (
     WHERE rg.source_id IS NOT NULL
       AND rg.entrez IS NOT NULL
     UNION
-    -- If a source key maps to a primary UniProt that has a gene anchor, the
-    -- source key also has that gene anchor.
+    -- If a source key has both a gene anchor and a primary UniProt, the primary
+    -- UniProt should resolve to the same gene (e.g. Cngb1 -> A0A8I5ZN27 and
+    -- Cngb1 -> Entrez).
     SELECT
-      pk.ncbi_tax_id,
-      pk.source_type,
-      pk.source_id,
-      rg.entrez
-    FROM protein_key pk
-    JOIN omnipath_utils.resolver_gene rg
-      ON rg.ncbi_tax_id = pk.ncbi_tax_id
-     AND rg.source_type = 'uniprot'
-     AND rg.source_id = pk.primary_uniprot
-    UNION
-    -- If a source key itself has a gene anchor, the primary UniProt it points to
-    -- should resolve to the same gene.
-    SELECT
-      pk.ncbi_tax_id,
+      rp.ncbi_tax_id,
       'uniprot' AS source_type,
-      pk.primary_uniprot AS source_id,
+      rp.uniprot AS source_id,
       rg.entrez
-    FROM protein_key pk
+    FROM omnipath_utils.resolver_protein rp
     JOIN omnipath_utils.resolver_gene rg
-      ON rg.ncbi_tax_id = pk.ncbi_tax_id
-     AND rg.source_type = pk.source_type
-     AND rg.source_id = pk.source_id
-    WHERE pk.primary_uniprot IS NOT NULL
+      ON rg.ncbi_tax_id = rp.ncbi_tax_id
+     AND rg.source_type = rp.source_type
+     AND rg.source_id = rp.source_id
+    WHERE rp.uniprot IS NOT NULL
+      AND rg.entrez IS NOT NULL
     UNION
     -- Secondary accessions inherit the primary accession's gene anchor.
     SELECT
