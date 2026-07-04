@@ -130,6 +130,7 @@ class DatabaseBuilder:
             'mirbase',
             'file',
             'uniprot_ftp',
+            'gene2ensembl',
             'metanetx',
             'bigg',
             # Structure-bearing backends (inputs_v2 adapter + PubChem)
@@ -511,6 +512,92 @@ class DatabaseBuilder:
             n, time.time() - start,
         )
 
+    def load_gene2ensembl(self):
+        """Load NCBI ``gene2ensembl`` — authoritative ensp/ensg -> entrez, all taxa.
+
+        NCBI is the authority for Entrez Gene; this single all-organism file gives,
+        per taxon, ENSP->Entrez and ENSG->Entrez DIRECT and for **every** transcript
+        (unlike the UniProt idmapping, which cross-references only one canonical ENSP
+        per protein and so misses the other-transcript ENSPs resources supply, e.g.
+        STITCH). ``resolver_gene`` anchors Ensembl/gene ids to Entrez through THIS
+        (gene space), not through UniProt. Ensembl ids are stored versionless.
+        Idempotent (DELETE + COPY the ``gene2ensembl`` backend slice).
+        """
+        from pypath.inputs.ncbi_gene import gene2ensembl
+        from omnipath_utils.db._connection import get_connection
+
+        with Session(self.engine) as session:
+            ensg = session.query(IdType).filter_by(name='ensg').first()
+            ensp = session.query(IdType).filter_by(name='ensp').first()
+            entrez = session.query(IdType).filter_by(name='entrez').first()
+            backend = (
+                session.query(Backend).filter_by(name='gene2ensembl').first()
+            )
+            if not backend:
+                backend = Backend(name='gene2ensembl')
+                session.add(backend)
+                session.commit()
+            if not ensg or not ensp or not entrez:
+                _log.error(
+                    'load_gene2ensembl: ensg/ensp/entrez id_type missing; skipping'
+                )
+                return
+            ensg_id, ensp_id, entrez_id, backend_id = (
+                ensg.id, ensp.id, entrez.id, backend.id,
+            )
+
+        start = time.time()
+        with Session(self.engine) as session:
+            session.execute(
+                text(
+                    f'DELETE FROM {SCHEMA}.id_mapping WHERE backend_id = :b'
+                ),
+                {'b': backend_id},
+            )
+            session.commit()
+
+        # Deduplicate on the wire (the file has one row per transcript, so ENSG and
+        # ENSP<->Entrez pairs repeat heavily).
+        seen: set[tuple] = set()
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, '
+                    'ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
+                ) as copy:
+                    for rec in gene2ensembl():
+                        if rec.entrez is None:
+                            continue
+                        for src_id, sid in (
+                            (ensp_id, rec.ensembl_protein),
+                            (ensg_id, rec.ensembl_gene),
+                        ):
+                            if not sid:
+                                continue
+                            key = (src_id, rec.ncbi_tax_id, sid, rec.entrez)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            copy.write_row((
+                                src_id, entrez_id, rec.ncbi_tax_id,
+                                sid[:64], rec.entrez[:64], backend_id,
+                            ))
+                            n += 1
+                            if self._max_records and n >= self._max_records:
+                                break
+                        if self._max_records and n >= self._max_records:
+                            break
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d gene2ensembl ensp/ensg->entrez rows in %.1fs',
+            n, time.time() - start,
+        )
+
     def create_resolver_views(self):
         """(Re)create the canonical resolver projection views (SQL DDL).
 
@@ -596,6 +683,13 @@ class DatabaseBuilder:
             self.load_uniprot_sec_ac()
         except Exception as e:
             _log.error('Failed to load sec_ac (secondary->primary UniProt): %s', e)
+
+        # Authoritative ensp/ensg->entrez (NCBI gene2ensembl) — gene-space anchor,
+        # all organisms, every transcript (the ENSP-coverage fix).
+        try:
+            self.load_gene2ensembl()
+        except Exception as e:
+            _log.error('Failed to load gene2ensembl: %s', e)
 
     # FTP idmapping labels NOT loaded by default (annotation/clustering, not ID
     # translation; they 10x the table). Opt in via OMNIPATH_BUILD_FTP_HEAVY_TYPES.
@@ -846,6 +940,13 @@ class DatabaseBuilder:
             self.load_uniprot_sec_ac()
         except Exception as e:
             _log.error('Failed to load sec_ac (secondary->primary UniProt): %s', e)
+
+        # Authoritative ensp/ensg->entrez (NCBI gene2ensembl) — resolver_gene
+        # anchors Ensembl/gene ids through this gene-space map, not UniProt.
+        try:
+            self.load_gene2ensembl()
+        except Exception as e:
+            _log.error('Failed to load gene2ensembl: %s', e)
 
         # The resolver projection reads id_mapping_ftp, so (re)create it now.
         self.create_resolver_views()
