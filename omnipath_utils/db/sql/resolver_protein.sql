@@ -99,6 +99,14 @@ WHERE ((grp_has_swissprot AND is_swissprot) OR NOT grp_has_swissprot)
 -- Keyed-lookup index: the build probes by (ncbi_tax_id, source_type, source_id).
 CREATE INDEX IF NOT EXISTS resolver_protein_key_idx
     ON omnipath_utils.resolver_protein (ncbi_tax_id, source_type, source_id);
+-- The build's per-shard keyed join filters (source_type, source_id) but NOT
+-- ncbi_tax_id (a source id may arrive with no/any taxon -> an OR on taxon), so the
+-- ncbi_tax_id-leading index above is unusable for it and Postgres seq-scans the
+-- 300M rows (~64 s/shard). This (source_type, source_id) covering index makes it an
+-- index-only probe (taxon becomes a cheap post-filter). Covers uniprot for the payload.
+CREATE INDEX IF NOT EXISTS resolver_protein_st_si_idx
+    ON omnipath_utils.resolver_protein (source_type, source_id)
+    INCLUDE (ncbi_tax_id, uniprot);
 
 
 -- Gene-anchor projection (spec 002, M-Genes / US7 / FR-026): maps any in-scope
@@ -283,6 +291,12 @@ JOIN g2e_ensg ge ON ge.ncbi_tax_id = s.ncbi_tax_id AND ge.ensg = s.ensg;
 -- makes each shard's needed ids index scans on the materialised table.
 CREATE INDEX IF NOT EXISTS resolver_gene_key_idx
     ON omnipath_utils.resolver_gene (ncbi_tax_id, source_type, source_id);
+-- (source_type, source_id) covering index for the build's per-shard keyed join,
+-- which does not constrain ncbi_tax_id (see resolver_protein_st_si_idx) -> without
+-- this it seq-scans the 78M-row table. Covers entrez for an index-only probe.
+CREATE INDEX IF NOT EXISTS resolver_gene_st_si_idx
+    ON omnipath_utils.resolver_gene (source_type, source_id)
+    INCLUDE (ncbi_tax_id, entrez);
 -- Reverse probe (by gene) for entrez-anchored lookups.
 CREATE INDEX IF NOT EXISTS resolver_gene_entrez_idx
     ON omnipath_utils.resolver_gene (ncbi_tax_id, entrez);
