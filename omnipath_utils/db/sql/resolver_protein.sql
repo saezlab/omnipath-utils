@@ -36,8 +36,14 @@ JOIN omnipath_utils.id_type st ON m.source_type_id = st.id
  AND st.name IN ('genesymbol', 'ensg', 'ensp', 'entrez', 'refseqp')
 JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'uniprot'
 UNION ALL
--- uniprot identity (so a uniprot evidence id canonicalises to its primary)
-SELECT m.ncbi_tax_id, 'uniprot', m.target_id, m.source_id
+-- uniprot accession identity (so a primary uniprot evidence id canonicalises)
+SELECT DISTINCT m.ncbi_tax_id, 'uniprot', m.source_id, m.source_id
+FROM omnipath_utils.id_mapping_ftp m
+JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
+WHERE m.source_id IS NOT NULL
+UNION ALL
+-- uniprot entry name -> accession
+SELECT m.ncbi_tax_id, 'uniprot_entry', m.target_id, m.source_id
 FROM omnipath_utils.id_mapping_ftp m
 JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
 JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'uniprot_entry';
@@ -215,6 +221,157 @@ CREATE INDEX IF NOT EXISTS resolver_gene_key_idx
 -- Reverse probe (by gene) for entrez-anchored lookups.
 CREATE INDEX IF NOT EXISTS resolver_gene_entrez_idx
     ON omnipath_utils.resolver_gene (ncbi_tax_id, entrez);
+
+
+-- Combined gene/protein resolver. It emits one canonical target per
+-- (taxon, source_type, source_id): Entrez if uniquely derivable, otherwise the
+-- primary UniProt if uniquely derivable. Ambiguous keys are omitted and remain
+-- unresolved in consumers.
+DO $$
+DECLARE k "char";
+BEGIN
+  SELECT c.relkind INTO k FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'omnipath_utils'
+     AND c.relname = 'resolver_gene_protein_combined';
+  IF k = 'v' THEN
+    EXECUTE 'DROP VIEW omnipath_utils.resolver_gene_protein_combined CASCADE';
+  ELSIF k = 'm' THEN
+    EXECUTE 'DROP MATERIALIZED VIEW omnipath_utils.resolver_gene_protein_combined CASCADE';
+  END IF;
+END $$;
+CREATE MATERIALIZED VIEW omnipath_utils.resolver_gene_protein_combined AS
+WITH sec_pri AS (
+    SELECT m.source_id AS sec, m.target_id AS pri
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st
+      ON m.source_type_id = st.id AND st.name = 'uniprot-sec'
+    JOIN omnipath_utils.id_type tt
+      ON m.target_type_id = tt.id AND tt.name = 'uniprot-pri'
+),
+protein_key AS (
+    SELECT
+      rp.ncbi_tax_id,
+      rp.source_type,
+      rp.source_id,
+      rp.uniprot AS primary_uniprot
+    FROM omnipath_utils.resolver_protein rp
+    WHERE rp.source_id IS NOT NULL
+      AND rp.uniprot IS NOT NULL
+    UNION
+    SELECT
+      NULLIF(m.ncbi_tax_id, 0) AS ncbi_tax_id,
+      'uniprot' AS source_type,
+      m.source_id AS source_id,
+      m.target_id AS primary_uniprot
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st
+      ON m.source_type_id = st.id AND st.name = 'uniprot-sec'
+    JOIN omnipath_utils.id_type tt
+      ON m.target_type_id = tt.id AND tt.name = 'uniprot-pri'
+    WHERE m.source_id IS NOT NULL
+      AND m.target_id IS NOT NULL
+),
+entrez_candidate AS (
+    SELECT
+      rg.ncbi_tax_id,
+      rg.source_type,
+      rg.source_id,
+      rg.entrez
+    FROM omnipath_utils.resolver_gene rg
+    WHERE rg.source_id IS NOT NULL
+      AND rg.entrez IS NOT NULL
+    UNION
+    -- If a source key maps to a primary UniProt that has a gene anchor, the
+    -- source key also has that gene anchor.
+    SELECT
+      pk.ncbi_tax_id,
+      pk.source_type,
+      pk.source_id,
+      rg.entrez
+    FROM protein_key pk
+    JOIN omnipath_utils.resolver_gene rg
+      ON rg.ncbi_tax_id = pk.ncbi_tax_id
+     AND rg.source_type = 'uniprot'
+     AND rg.source_id = pk.primary_uniprot
+    UNION
+    -- If a source key itself has a gene anchor, the primary UniProt it points to
+    -- should resolve to the same gene.
+    SELECT
+      pk.ncbi_tax_id,
+      'uniprot' AS source_type,
+      pk.primary_uniprot AS source_id,
+      rg.entrez
+    FROM protein_key pk
+    JOIN omnipath_utils.resolver_gene rg
+      ON rg.ncbi_tax_id = pk.ncbi_tax_id
+     AND rg.source_type = pk.source_type
+     AND rg.source_id = pk.source_id
+    WHERE pk.primary_uniprot IS NOT NULL
+    UNION
+    -- Secondary accessions inherit the primary accession's gene anchor.
+    SELECT
+      rg.ncbi_tax_id,
+      'uniprot' AS source_type,
+      sp.sec AS source_id,
+      rg.entrez
+    FROM sec_pri sp
+    JOIN omnipath_utils.resolver_gene rg
+      ON rg.source_type = 'uniprot'
+     AND rg.source_id = sp.pri
+    WHERE sp.sec IS NOT NULL
+),
+entrez_unique AS (
+    SELECT
+      ncbi_tax_id,
+      source_type,
+      source_id,
+      min(entrez) AS canonical_id
+    FROM entrez_candidate
+    WHERE source_id IS NOT NULL
+      AND entrez IS NOT NULL
+    GROUP BY ncbi_tax_id, source_type, source_id
+    HAVING count(DISTINCT entrez) = 1
+),
+uniprot_unique AS (
+    SELECT
+      pk.ncbi_tax_id,
+      pk.source_type,
+      pk.source_id,
+      min(pk.primary_uniprot) AS canonical_id
+    FROM protein_key pk
+    LEFT JOIN entrez_unique eu
+      ON eu.ncbi_tax_id IS NOT DISTINCT FROM pk.ncbi_tax_id
+     AND eu.source_type = pk.source_type
+     AND eu.source_id = pk.source_id
+    WHERE eu.source_id IS NULL
+      AND pk.source_id IS NOT NULL
+      AND pk.primary_uniprot IS NOT NULL
+    GROUP BY pk.ncbi_tax_id, pk.source_type, pk.source_id
+    HAVING count(DISTINCT pk.primary_uniprot) = 1
+)
+SELECT
+  ncbi_tax_id,
+  source_type,
+  source_id,
+  'entrez' AS canonical_type,
+  canonical_id
+FROM entrez_unique
+UNION ALL
+SELECT
+  ncbi_tax_id,
+  source_type,
+  source_id,
+  'uniprot' AS canonical_type,
+  canonical_id
+FROM uniprot_unique;
+
+CREATE INDEX IF NOT EXISTS resolver_gene_protein_combined_key_idx
+    ON omnipath_utils.resolver_gene_protein_combined
+    (ncbi_tax_id, source_type, source_id);
+CREATE INDEX IF NOT EXISTS resolver_gene_protein_combined_target_idx
+    ON omnipath_utils.resolver_gene_protein_combined
+    (canonical_type, canonical_id, ncbi_tax_id);
 
 
 -- Global (taxon-agnostic) UniProt/Entrez gene anchor (spec 002, T069 / R25 / US7).
