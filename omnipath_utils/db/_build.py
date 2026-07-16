@@ -642,26 +642,84 @@ class DatabaseBuilder:
         self.populate_backends()
         self.populate_organisms()
 
-    def build_all(self, organisms: list[int] | None = None):
+    def _record_build_scope(self, scope, organisms):
+        """Record the 007 build scope in ``build_info`` (idempotent).
+
+        Stores one ``table_name='build_scope'`` row: the scope label in
+        ``source_type`` and the organism count in ``row_count`` (0 for the
+        all-taxa ``complete`` scope). Lets a coverage report / consumer state
+        which scope produced the DB.
+        """
+        label = scope or 'custom'
+        taxa = organisms if organisms is not None else []
+        with Session(self.engine) as session:
+            session.execute(
+                text(
+                    f"DELETE FROM {SCHEMA}.build_info"
+                    " WHERE table_name = 'build_scope'"
+                )
+            )
+            session.add(
+                BuildInfo(
+                    table_name='build_scope',
+                    source_type=str(label)[:64],
+                    target_type=(
+                        'complete' if scope == 'complete' else 'organisms'
+                    ),
+                    ncbi_tax_id=0,
+                    backend='cli',
+                    row_count=len(taxa),
+                    status='done',
+                )
+            )
+            session.commit()
+        _log.info(
+            'build scope = %s (%s)',
+            label,
+            'complete/all-taxa'
+            if scope == 'complete'
+            else f'{len(taxa)} organism(s)',
+        )
+
+    def build_all(
+        self,
+        organisms: list[int] | None = None,
+        scope: str | None = None,
+    ):
         """Full build: reference tables + mappings + reflists.
 
         Uses preset infrastructure internally. Equivalent to a custom
         preset with the given organisms, protein core + Ensembl mappings,
         and reference lists.
 
-        Note: uniprot-sec -> uniprot-pri is skipped here because it has
-        no backend column; that table requires a dedicated loader from
-        UniProt sec_ac.txt or the FTP idmapping file.  The cleanup
-        pipeline works without it (the secondary -> primary step is
-        simply skipped).
+        ``scope`` is the 007 build-scope label (``only-human`` / ``core-model``
+        / ``extended-model`` / ``model-organisms`` / ``complete``, or a custom
+        organism list) recorded in ``build_info``. For ``complete`` scope the
+        per-organism REST protein loop is skipped — protein mappings come from
+        the all-organism FTP idmapping (``populate_from_ftp`` / already present
+        in a cumulative base) plus the organism-agnostic gene-space anchors
+        loaded below.
         """
         from omnipath_utils.db._presets import ENSEMBL, PROTEIN_CORE
 
         self.build_reference_tables()
 
-        organisms = organisms or [9606]  # default: human only
+        complete = scope == 'complete'
+        if not complete:
+            organisms = organisms or [9606]  # default: human only
 
-        self._run_mappings_parallel(PROTEIN_CORE + ENSEMBL, organisms)
+        self._record_build_scope(scope, organisms if not complete else None)
+
+        if complete:
+            _log.info(
+                'build_all: complete scope — protein mappings from the FTP '
+                'idmapping base + all-taxa gene-space anchors; skipping the '
+                'per-organism REST mapping/reflist loop',
+            )
+            organisms = []
+
+        if organisms:
+            self._run_mappings_parallel(PROTEIN_CORE + ENSEMBL, organisms)
 
         # Reference lists
         for org in organisms:
@@ -1593,6 +1651,24 @@ class DatabaseBuilder:
                         src_type_id = src_type.id
                         tgt_type_id = tgt_type.id
 
+                        # Idempotent re-run: clear this (src, tgt, tax=0,
+                        # backend) slice before COPY so a cumulative rebuild
+                        # does not append duplicate rows.
+                        session.execute(
+                            text(
+                                f'DELETE FROM {SCHEMA}.id_mapping'
+                                ' WHERE source_type_id = :src'
+                                ' AND target_type_id = :tgt'
+                                ' AND ncbi_tax_id = 0 AND backend_id = :bk'
+                            ),
+                            {
+                                'src': src_type_id,
+                                'tgt': tgt_type_id,
+                                'bk': backend_id,
+                            },
+                        )
+                        session.commit()
+
                     conn = get_connection(self._db_url)
                     row_count = 0
 
@@ -1776,6 +1852,24 @@ class DatabaseBuilder:
 
                         src_type_id = src_t.id
                         tgt_type_id = tgt_t.id
+
+                        # Idempotent re-run: clear this (src, tgt, tax=0,
+                        # backend) slice before COPY so a cumulative rebuild
+                        # does not append duplicate rows.
+                        session.execute(
+                            text(
+                                f'DELETE FROM {SCHEMA}.id_mapping'
+                                ' WHERE source_type_id = :src'
+                                ' AND target_type_id = :tgt'
+                                ' AND ncbi_tax_id = 0 AND backend_id = :bk'
+                            ),
+                            {
+                                'src': src_type_id,
+                                'tgt': tgt_type_id,
+                                'bk': backend_id,
+                            },
+                        )
+                        session.commit()
 
                     conn = get_connection(self._db_url)
                     row_count = 0

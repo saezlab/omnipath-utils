@@ -48,6 +48,17 @@ def build_cmd(args: list[str]):
         help='Build preset',
     )
     parser.add_argument(
+        '--scope',
+        default=None,
+        help=(
+            'Build scope (007): a nested preset — only-human, core-model, '
+            'extended-model, model-organisms, complete — or an explicit '
+            'comma-separated list of NCBI taxonomy ids / organism names '
+            '(e.g. "human,pig,chimpanzee" or "9606,9823,9598"). '
+            'Overrides --organisms; drives build_all.'
+        ),
+    )
+    parser.add_argument(
         '--parquet-dir',
         default=None,
         help='Directory for Parquet file exports',
@@ -120,6 +131,11 @@ def build_cmd(args: list[str]):
         builder.populate_metabolites()
     elif opts.ref_only:
         builder.build_reference_tables()
+    elif opts.scope:
+        from omnipath_utils.db._presets import resolve_scope
+
+        taxa = resolve_scope(opts.scope)
+        builder.build_all(organisms=taxa, scope=opts.scope)
     else:
         builder.build_all(organisms=opts.organisms)
 
