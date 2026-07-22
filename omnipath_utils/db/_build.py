@@ -598,6 +598,173 @@ class DatabaseBuilder:
             n, time.time() - start,
         )
 
+    def load_gene_info(self, organisms=None):
+        """Load NCBI ``gene_info`` — authoritative genesymbol/synonym -> entrez.
+
+        The true gene-space symbol<->entrez map for **all** organisms (covers
+        genes with no UniProt), closing the ``resolver_protein.sql`` follow-up
+        gap. ``organisms`` limits the loaded taxa (``None`` = all, for the
+        ``complete`` scope). Idempotent (DELETE + COPY the ``gene_info`` slice).
+        """
+        from pypath.inputs.ncbi_gene import gene_info
+        from omnipath_utils.db._connection import get_connection
+
+        taxa = set(organisms) if organisms else None
+
+        with Session(self.engine) as session:
+            symbol = session.query(IdType).filter_by(name='genesymbol').first()
+            syn = (
+                session.query(IdType).filter_by(name='genesymbol-syn').first()
+            )
+            entrez = session.query(IdType).filter_by(name='entrez').first()
+            backend = (
+                session.query(Backend).filter_by(name='gene_info').first()
+            )
+            if not backend:
+                backend = Backend(name='gene_info')
+                session.add(backend)
+                session.commit()
+            if not symbol or not entrez:
+                _log.error(
+                    'load_gene_info: genesymbol/entrez id_type missing; skipping'
+                )
+                return
+            symbol_id, entrez_id, backend_id = (
+                symbol.id, entrez.id, backend.id,
+            )
+            syn_id = syn.id if syn else None
+
+        start = time.time()
+        with Session(self.engine) as session:
+            session.execute(
+                text(f'DELETE FROM {SCHEMA}.id_mapping WHERE backend_id = :b'),
+                {'b': backend_id},
+            )
+            session.commit()
+
+        seen: set[tuple] = set()
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, '
+                    'ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
+                ) as copy:
+                    for rec in gene_info():
+                        if rec.entrez is None:
+                            continue
+                        if taxa is not None and rec.ncbi_tax_id not in taxa:
+                            continue
+                        pairs = []
+                        if rec.symbol:
+                            pairs.append((symbol_id, rec.symbol))
+                        if syn_id is not None and rec.synonyms:
+                            pairs.extend(
+                                (syn_id, s) for s in rec.synonyms if s
+                            )
+                        for src_id, sval in pairs:
+                            key = (src_id, rec.ncbi_tax_id, sval, rec.entrez)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            copy.write_row((
+                                src_id, entrez_id, rec.ncbi_tax_id,
+                                sval[:64], rec.entrez[:64], backend_id,
+                            ))
+                            n += 1
+                        if self._max_records and n >= self._max_records:
+                            break
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d gene_info genesymbol/syn->entrez rows in %.1fs',
+            n, time.time() - start,
+        )
+
+    def load_gene2accession(self, organisms=None):
+        """Load NCBI ``gene2accession`` — RefSeq RNA/protein -> entrez.
+
+        Gene-space RefSeq (``refseqn`` RNA, ``refseqp`` protein) <-> Entrez for
+        the scope's organisms (``None`` = all). Accessions are versionless; the
+        file repeats a gene per assembly, so pairs are de-duplicated on the wire.
+        Idempotent (DELETE + COPY the ``gene2accession`` slice).
+        """
+        from pypath.inputs.ncbi_gene import gene2accession
+        from omnipath_utils.db._connection import get_connection
+
+        taxa = set(organisms) if organisms else None
+
+        with Session(self.engine) as session:
+            refseqn = session.query(IdType).filter_by(name='refseqn').first()
+            refseqp = session.query(IdType).filter_by(name='refseqp').first()
+            entrez = session.query(IdType).filter_by(name='entrez').first()
+            backend = (
+                session.query(Backend).filter_by(name='gene2accession').first()
+            )
+            if not backend:
+                backend = Backend(name='gene2accession')
+                session.add(backend)
+                session.commit()
+            if not entrez or (not refseqn and not refseqp):
+                _log.error(
+                    'load_gene2accession: entrez/refseq id_type missing; skipping'
+                )
+                return
+            entrez_id, backend_id = entrez.id, backend.id
+            refseqn_id = refseqn.id if refseqn else None
+            refseqp_id = refseqp.id if refseqp else None
+
+        start = time.time()
+        with Session(self.engine) as session:
+            session.execute(
+                text(f'DELETE FROM {SCHEMA}.id_mapping WHERE backend_id = :b'),
+                {'b': backend_id},
+            )
+            session.commit()
+
+        seen: set[tuple] = set()
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, '
+                    'ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
+                ) as copy:
+                    for rec in gene2accession():
+                        if rec.entrez is None:
+                            continue
+                        if taxa is not None and rec.ncbi_tax_id not in taxa:
+                            continue
+                        for src_id, sval in (
+                            (refseqn_id, rec.rna_refseq),
+                            (refseqp_id, rec.protein_refseq),
+                        ):
+                            if src_id is None or not sval:
+                                continue
+                            key = (src_id, rec.ncbi_tax_id, sval, rec.entrez)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            copy.write_row((
+                                src_id, entrez_id, rec.ncbi_tax_id,
+                                sval[:64], rec.entrez[:64], backend_id,
+                            ))
+                            n += 1
+                        if self._max_records and n >= self._max_records:
+                            break
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d gene2accession refseq->entrez rows in %.1fs',
+            n, time.time() - start,
+        )
+
     def create_resolver_views(self):
         """(Re)create the canonical resolver projection views (SQL DDL).
 
@@ -748,6 +915,18 @@ class DatabaseBuilder:
             self.load_gene2ensembl()
         except Exception as e:
             _log.error('Failed to load gene2ensembl: %s', e)
+
+        # Complete gene-space symbol/synonym + RefSeq -> entrez (007 US1).
+        # None = all taxa (complete scope); otherwise the scope's organisms.
+        gene_space_taxa = None if complete else organisms
+        try:
+            self.load_gene_info(organisms=gene_space_taxa)
+        except Exception as e:
+            _log.error('Failed to load gene_info: %s', e)
+        try:
+            self.load_gene2accession(organisms=gene_space_taxa)
+        except Exception as e:
+            _log.error('Failed to load gene2accession: %s', e)
 
     # FTP idmapping labels NOT loaded by default (annotation/clustering, not ID
     # translation; they 10x the table). Opt in via OMNIPATH_BUILD_FTP_HEAVY_TYPES.
