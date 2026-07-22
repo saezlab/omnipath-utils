@@ -867,7 +867,12 @@ class DatabaseBuilder:
         in a cumulative base) plus the organism-agnostic gene-space anchors
         loaded below.
         """
-        from omnipath_utils.db._presets import ENSEMBL, PROTEIN_CORE
+        from omnipath_utils.db._presets import (
+            ENSEMBL,
+            ENSEMBL_GENOMES,
+            PROTEIN_CORE,
+        )
+        from omnipath_utils.mapping.backends._biomart import ORGANISM_DIVISION
 
         self.build_reference_tables()
 
@@ -887,6 +892,16 @@ class DatabaseBuilder:
 
         if organisms:
             self._run_mappings_parallel(PROTEIN_CORE + ENSEMBL, organisms)
+            # Ensembl Genomes divisions (plants/fungi/metazoa/protists): the
+            # eg-mart datasets only exist for these organisms, so run the
+            # ensgg/ensgp/ensgt pairs on the division subset of the scope.
+            division_organisms = [
+                o for o in organisms if o in ORGANISM_DIVISION
+            ]
+            if division_organisms:
+                self._run_mappings_parallel(
+                    ENSEMBL_GENOMES, division_organisms,
+                )
 
         # Reference lists
         for org in organisms:

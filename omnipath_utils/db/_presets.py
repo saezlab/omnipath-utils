@@ -68,6 +68,19 @@ ENSEMBL = [
     ('ensg', 'uniprot', 'biomart'),
 ]
 
+# Ensembl Genomes (non-vertebrate divisions: plants/fungi/metazoa/protists).
+# Same biomart backend, but the division-typed ensgg/ensgp/ensgt id-types so the
+# Ensembl Genomes stable IDs stay distinguishable from the vertebrate ensg/ensp.
+# Run only for organisms the BioMart backend routes to a genomes division
+# (see ORGANISM_DIVISION in mapping/backends/_biomart.py).
+ENSEMBL_GENOMES = [
+    ('ensgg', 'genesymbol', 'biomart'),
+    ('ensgp', 'ensgg', 'biomart'),
+    ('ensgt', 'ensgg', 'biomart'),
+    ('ensgp', 'uniprot', 'biomart'),
+    ('ensgg', 'uniprot', 'biomart'),
+]
+
 METABOLITE = [
     # Metabolite mappings are organism-agnostic (ncbi_tax_id=0) and handled
     # by populate_metabolites() which auto-discovers all pairs from

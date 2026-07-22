@@ -316,6 +316,7 @@ ensgg:
   curie_prefix: ensembl
   backends:
     uploadlists: Ensembl_Genomes
+    ensembl: ensembl_gene_id
   aliases:
     - ensembl_genomes
 
@@ -325,6 +326,7 @@ ensgp:
   curie_prefix: ensembl
   backends:
     uploadlists: Ensembl_Genomes_Protein
+    ensembl: ensembl_peptide_id
   aliases:
     - ensembl_genomes_protein
 
@@ -334,6 +336,7 @@ ensgt:
   curie_prefix: ensembl
   backends:
     uploadlists: Ensembl_Genomes_Transcript
+    ensembl: ensembl_transcript_id
   aliases:
     - ensembl_genomes_transcript
 
