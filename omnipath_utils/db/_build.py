@@ -131,6 +131,9 @@ class DatabaseBuilder:
             'file',
             'uniprot_ftp',
             'gene2ensembl',
+            'gene_info',
+            'gene2accession',
+            'kegg_gene',
             'metanetx',
             'bigg',
             # Structure-bearing backends (inputs_v2 adapter + PubChem)
@@ -765,6 +768,94 @@ class DatabaseBuilder:
             n, time.time() - start,
         )
 
+    def load_kegg_genes(self, organisms=None):
+        """Load KEGG gene ids -> entrez / uniprot for the scope's organisms.
+
+        KEGG gene relations are organism-specific (one REST ``conv`` call per
+        organism), so this iterates the scope organisms, resolving each to its
+        KEGG organism code. KEGG gene ids are stored in canonical ``<org>:<n>``
+        form. Idempotent (DELETE the ``kegg_gene`` backend slice then COPY).
+        """
+        from pypath.inputs.kegg import (
+            kegg_gene_to_ncbi_gene,
+            kegg_gene_to_uniprot,
+        )
+        from omnipath_utils.db._connection import get_connection
+
+        organisms = organisms or [9606]
+        tm = TaxonomyManager.get()
+
+        with Session(self.engine) as session:
+            kegg_gene = (
+                session.query(IdType).filter_by(name='kegg_gene').first()
+            )
+            entrez = session.query(IdType).filter_by(name='entrez').first()
+            uniprot = session.query(IdType).filter_by(name='uniprot').first()
+            backend = (
+                session.query(Backend).filter_by(name='kegg_gene').first()
+            )
+            if not backend:
+                backend = Backend(name='kegg_gene')
+                session.add(backend)
+                session.commit()
+            if not kegg_gene or not entrez:
+                _log.error(
+                    'load_kegg_genes: kegg_gene/entrez id_type missing; skipping'
+                )
+                return
+            kegg_gene_id, entrez_id, backend_id = (
+                kegg_gene.id, entrez.id, backend.id,
+            )
+            uniprot_id = uniprot.id if uniprot else None
+
+        start = time.time()
+        with Session(self.engine) as session:
+            session.execute(
+                text(f'DELETE FROM {SCHEMA}.id_mapping WHERE backend_id = :b'),
+                {'b': backend_id},
+            )
+            session.commit()
+
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, '
+                    'ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
+                ) as copy:
+                    for org in organisms:
+                        code = tm.ensure_kegg_code(org)
+                        if not code:
+                            _log.warning(
+                                'load_kegg_genes: no KEGG code for organism %d',
+                                org,
+                            )
+                            continue
+                        targets = [(entrez_id, kegg_gene_to_ncbi_gene(code))]
+                        if uniprot_id is not None:
+                            targets.append(
+                                (uniprot_id, kegg_gene_to_uniprot(code)),
+                            )
+                        for tgt_id, data in targets:
+                            for src_val, tgt_vals in data.items():
+                                for tval in tgt_vals:
+                                    copy.write_row((
+                                        kegg_gene_id, tgt_id, org,
+                                        src_val[:64], tval[:64], backend_id,
+                                    ))
+                                    n += 1
+                        if self._max_records and n >= self._max_records:
+                            break
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d kegg_gene->entrez/uniprot rows in %.1fs',
+            n, time.time() - start,
+        )
+
     def create_resolver_views(self):
         """(Re)create the canonical resolver projection views (SQL DDL).
 
@@ -942,6 +1033,15 @@ class DatabaseBuilder:
             self.load_gene2accession(organisms=gene_space_taxa)
         except Exception as e:
             _log.error('Failed to load gene2accession: %s', e)
+
+        # KEGG gene ids -> entrez/uniprot. Per-organism REST calls, so only for
+        # an explicit organism list (skipped for complete: KEGG has no bulk
+        # all-organism gene conv, and iterating every NCBI taxon is infeasible).
+        if organisms:
+            try:
+                self.load_kegg_genes(organisms=organisms)
+            except Exception as e:
+                _log.error('Failed to load kegg_genes: %s', e)
 
     # FTP idmapping labels NOT loaded by default (annotation/clustering, not ID
     # translation; they 10x the table). Opt in via OMNIPATH_BUILD_FTP_HEAVY_TYPES.

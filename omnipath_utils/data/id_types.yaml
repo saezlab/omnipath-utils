@@ -217,6 +217,15 @@ entrez:
     - ncbigene
     - gene_id
 
+kegg_gene:
+  label: KEGG gene
+  entity_type: gene
+  curie_prefix: kegg.genes
+  backends: {}
+  aliases:
+    - kegg_genes
+    - kegggene
+
 gi:
   label: GI number
   entity_type: gene
