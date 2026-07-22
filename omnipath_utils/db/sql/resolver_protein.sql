@@ -220,6 +220,57 @@ bm_symbol_ensg AS (
     FROM omnipath_utils.id_mapping m
     JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'ensg'
     JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'genesymbol'
+),
+-- ===== 007 US1: authoritative NCBI gene-space + KEGG anchors =====
+-- gene_info (backend gene_info): genesymbol / synonym -> entrez DIRECT, all
+-- organisms, independent of UniProt (covers genes with no protein product).
+-- Both primary symbols and synonyms are emitted under source_type 'genesymbol'
+-- below, so a symbol lookup that happens to hit a synonym still resolves;
+-- ambiguous synonyms are dropped by the combined resolver's uniqueness gate.
+-- This is the DIRECT symbol<->entrez map the UniProt-derived paths above could
+-- not provide (closes the gap noted at the genesymbol supplement branch).
+gi_symbol AS (
+    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS genesymbol, m.target_id AS entrez
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id
+     AND st.name IN ('genesymbol', 'genesymbol-syn')
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'entrez'
+),
+-- gene2accession (backend gene2accession): RefSeq RNA/protein -> entrez DIRECT.
+g2a_refseq AS (
+    SELECT DISTINCT m.ncbi_tax_id, st.name AS source_type,
+           m.source_id AS refseq, m.target_id AS entrez
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id
+     AND st.name IN ('refseqn', 'refseqp')
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'entrez'
+),
+-- KEGG gene id -> entrez (backend kegg_gene).
+kg_entrez AS (
+    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS kegg_gene, m.target_id AS entrez
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'kegg_gene'
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'entrez'
+),
+-- Ensembl Genomes divisions (BioMart genomes): gene -> genesymbol, and
+-- protein/transcript -> gene. Anchored to entrez via the gi_symbol bridge below.
+egg_symbol AS (
+    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS ensgg, m.target_id AS genesymbol
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'ensgg'
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'genesymbol'
+),
+egg_prot AS (
+    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS ensgp, m.target_id AS ensgg
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'ensgp'
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'ensgg'
+),
+egg_tx AS (
+    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS ensgt, m.target_id AS ensgg
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'ensgt'
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'ensgg'
 )
 -- entrez -> entrez (identity). Aliases here name the view columns for all UNION
 -- branches (ncbi_tax_id, source_type, source_id, entrez).
@@ -285,7 +336,35 @@ UNION
 -- genesymbol -> ensg (BioMart) -> entrez (gene2ensembl): authoritative symbol path.
 SELECT DISTINCT s.ncbi_tax_id, 'genesymbol', s.genesymbol, ge.entrez
 FROM bm_symbol_ensg s
-JOIN g2e_ensg ge ON ge.ncbi_tax_id = s.ncbi_tax_id AND ge.ensg = s.ensg;
+JOIN g2e_ensg ge ON ge.ncbi_tax_id = s.ncbi_tax_id AND ge.ensg = s.ensg
+UNION
+-- ===== 007 US1: DIRECT NCBI gene-space + KEGG anchors =====
+-- genesymbol (and synonyms) -> entrez DIRECT (gene_info); emitted under
+-- 'genesymbol' so synonym-shaped symbol lookups resolve too.
+SELECT DISTINCT ncbi_tax_id, 'genesymbol', genesymbol, entrez FROM gi_symbol
+UNION
+-- refseqn / refseqp -> entrez DIRECT (gene2accession).
+SELECT DISTINCT ncbi_tax_id, source_type, refseq, entrez FROM g2a_refseq
+UNION
+-- kegg_gene -> entrez DIRECT (kegg_gene).
+SELECT DISTINCT ncbi_tax_id, 'kegg_gene', kegg_gene, entrez FROM kg_entrez
+UNION
+-- Ensembl Genomes gene -> genesymbol -> entrez (division bridge via gene_info).
+SELECT DISTINCT e.ncbi_tax_id, 'ensgg', e.ensgg, g.entrez
+FROM egg_symbol e
+JOIN gi_symbol g ON g.ncbi_tax_id = e.ncbi_tax_id AND g.genesymbol = e.genesymbol
+UNION
+-- Ensembl Genomes protein -> gene -> genesymbol -> entrez.
+SELECT DISTINCT p.ncbi_tax_id, 'ensgp', p.ensgp, g.entrez
+FROM egg_prot p
+JOIN egg_symbol e ON e.ncbi_tax_id = p.ncbi_tax_id AND e.ensgg = p.ensgg
+JOIN gi_symbol g ON g.ncbi_tax_id = p.ncbi_tax_id AND g.genesymbol = e.genesymbol
+UNION
+-- Ensembl Genomes transcript -> gene -> genesymbol -> entrez.
+SELECT DISTINCT t.ncbi_tax_id, 'ensgt', t.ensgt, g.entrez
+FROM egg_tx t
+JOIN egg_symbol e ON e.ncbi_tax_id = t.ncbi_tax_id AND e.ensgg = t.ensgg
+JOIN gi_symbol g ON g.ncbi_tax_id = t.ncbi_tax_id AND g.genesymbol = e.genesymbol;
 
 -- Keyed-lookup index: the build probes by (taxon, source_type, source_id); this
 -- makes each shard's needed ids index scans on the materialised table.
