@@ -109,90 +109,40 @@ CREATE INDEX IF NOT EXISTS resolver_protein_st_si_idx
     INCLUDE (ncbi_tax_id, uniprot);
 
 
+-- ===== resolver_gene: curated delta + FTP core, unioned =====
 -- Gene-anchor projection (spec 002, M-Genes / US7 / FR-026): maps any in-scope
 -- source identifier to its NCBI Gene (Entrez) anchor, per taxon. The gene is the
 -- canonical collapsing identity; entrez is the anchor (R17 — Entrez covers 50,018
--- taxa vs Ensembl's 240). Gene ids anchor through GENE space via an ensg<->entrez
--- bridge (see the bridging note on the materialised view below), not by routing
--- through UniProt; uniprot -> entrez stays a direct protein->gene hop. entrez maps
--- to itself. (Organisms with no entrez fall back to ensg/genesymbol — a follow-up;
--- entrez-anchor first covers the working set.)
+-- taxa vs Ensembl's 240). entrez maps to itself.
 --
--- Columns: (ncbi_tax_id, source_type, source_id, entrez). omnipath-build reads this
--- via DuckDB ATTACH; it is a MATERIALIZED, indexed table (keyed lookups, not a scan).
+-- Columns: (ncbi_tax_id, source_type, source_id, entrez). omnipath-build reads
+-- resolver_gene via DuckDB ATTACH; web/API read it too. The name and columns are
+-- UNCHANGED — resolver_gene is now a VIEW = resolver_gene_ftp UNION ALL
+-- resolver_gene_curated (spec 007 R10 / Phase 3P, T064):
+--   * resolver_gene_ftp     — the id_mapping_ftp-derived branches (expensive;
+--     rebuilt only on an FTP reload — see resolver_gene_ftp.sql).
+--   * resolver_gene_curated — the curated-id_mapping branches incl. all the 007
+--     US1 anchors (gene_info / gene2accession / KEGG / Ensembl Genomes / NCBI
+--     gene2ensembl / Ensembl BioMart). Cheap; rebuilt on EVERY additive load so a
+--     newly loaded curated mapping is picked up without re-deriving the FTP core.
+--
+-- UNION ALL (not UNION): so the resolver_gene VIEW flattens to an appendrel and the
+-- build's keyed join push-probes each child's (source_type, source_id) index,
+-- instead of materialising + deduping the ~83M-row union on every read (a UNION
+-- set-op is a join-pushdown barrier). Rows that both children emit therefore appear
+-- twice in the view; that is inert — every consumer collapses with SELECT DISTINCT
+-- / count(DISTINCT) / row_number (omnipath-build resolver_lookup gates, and the
+-- combined resolver below), so a duplicate never changes a resolution or an
+-- ambiguity count.
 
--- MATERIALIZED (2026-07-02): resolver_gene is a materialized, indexed table, not a
--- view. The bridge derivation below is too expensive to run per query — as a view
--- it took ~127 s/taxon (the multiply-referenced bridge defeats taxon pushdown),
--- wrecking the per-taxon / keyed-lookup reads the build does. Materialising computes
--- it once after the FTP load and serves keyed lookups from the index, so the build
--- probes the *normalised, bridged* resolver at id_mapping speed (rather than
--- bypassing to raw id_mapping and losing the sec_ac + ENSG-bridge coverage).
--- Rebuilt on reload: a full FTP load DROPs id_mapping_ftp CASCADE (dropping this),
--- and create_resolver_views() recreates + repopulates it.
--- Drop whichever kind currently exists (plain view from the pre-materialised era,
--- or an earlier materialised view) — IF EXISTS does not cover a relkind mismatch.
-DO $$
-DECLARE k "char";
-BEGIN
-  SELECT c.relkind INTO k FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-   WHERE n.nspname = 'omnipath_utils' AND c.relname = 'resolver_gene';
-  IF k = 'v' THEN EXECUTE 'DROP VIEW omnipath_utils.resolver_gene CASCADE';
-  ELSIF k = 'm' THEN EXECUTE 'DROP MATERIALIZED VIEW omnipath_utils.resolver_gene CASCADE';
-  END IF;
-END $$;
-CREATE MATERIALIZED VIEW omnipath_utils.resolver_gene AS
---
--- Bridging strategy (rev 2026-07-02b): gene identifiers anchor through **authoritative
--- gene space**, NOT UniProt. UniProt idmapping references only ~one canonical ENSP per
--- protein, so an ensp->...->entrez path derived from it misses the other transcripts'
--- ENSPs (e.g. the one STITCH uses) — that produced ~2,100 human/mouse proteins wrongly
--- left gene-unresolved. The authoritative sources:
---   * NCBI gene2ensembl (curated id_mapping, backend gene2ensembl): ensp->entrez and
---     ensg->entrez DIRECT, all organisms (772 taxa), every transcript, versionless.
---   * Ensembl BioMart (curated id_mapping, backend biomart): ensp->ensg, ensg->genesymbol.
--- These are the PRIMARY paths below. The old UniProt-FTP-derived paths (up_*) are kept
--- only as a SUPPLEMENT for organisms/ids the curated sources miss; uniprot->entrez stays
--- direct (UniProt is a protein). Never gene->protein->gene.
-WITH up_entrez AS (
-    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS uniprot, m.target_id AS entrez
-    FROM omnipath_utils.id_mapping_ftp m
-    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
-    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'entrez'
-),
-up_ensg AS (
-    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS uniprot, m.target_id AS ensg
-    FROM omnipath_utils.id_mapping_ftp m
-    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
-    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'ensg'
-),
-up_ensp AS (
-    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS uniprot, m.target_id AS ensp
-    FROM omnipath_utils.id_mapping_ftp m
-    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
-    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'ensp'
-),
-up_symbol AS (
-    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS uniprot, m.target_id AS genesymbol
-    FROM omnipath_utils.id_mapping_ftp m
-    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot'
-    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'genesymbol'
-),
+CREATE TABLE omnipath_utils.resolver_gene_curated AS
 -- secondary -> primary UniProt AC (organism-agnostic, tax 0; ADR 0006). Lets a
 -- resource that supplies a secondary accession still anchor to the gene.
-sec_pri AS (
+WITH sec_pri AS (
     SELECT m.source_id AS sec, m.target_id AS pri
     FROM omnipath_utils.id_mapping m
     JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'uniprot-sec'
     JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'uniprot-pri'
-),
--- SUPPLEMENT bridge: ensg -> entrez over ANY shared UniProt (UniProt-derived; kept
--- only to fill gaps the authoritative sources below miss).
-ensg_entrez AS (
-    SELECT DISTINCT g.ncbi_tax_id, g.ensg, e.entrez
-    FROM up_ensg g
-    JOIN up_entrez e ON e.ncbi_tax_id = g.ncbi_tax_id AND e.uniprot = g.uniprot
 ),
 -- AUTHORITATIVE gene space (curated id_mapping): NCBI gene2ensembl gives ensp->entrez
 -- and ensg->entrez DIRECT (all transcripts, 772 taxa); Ensembl BioMart gives
@@ -222,13 +172,10 @@ bm_symbol_ensg AS (
     JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'genesymbol'
 ),
 -- ===== 007 US1: authoritative NCBI gene-space + KEGG anchors =====
--- gene_info (backend gene_info): genesymbol / synonym -> entrez DIRECT, all
--- organisms, independent of UniProt (covers genes with no protein product).
--- Both primary symbols and synonyms are emitted under source_type 'genesymbol'
--- below, so a symbol lookup that happens to hit a synonym still resolves;
--- ambiguous synonyms are dropped by the combined resolver's uniqueness gate.
--- This is the DIRECT symbol<->entrez map the UniProt-derived paths above could
--- not provide (closes the gap noted at the genesymbol supplement branch).
+-- gene_info: genesymbol / synonym -> entrez DIRECT, all organisms, independent of
+-- UniProt (covers genes with no protein product). Both primary symbols and synonyms
+-- are emitted under source_type 'genesymbol' so a symbol lookup that hits a synonym
+-- still resolves; ambiguous synonyms are dropped by the combined resolver's gate.
 gi_symbol AS (
     SELECT DISTINCT m.ncbi_tax_id, m.source_id AS genesymbol, m.target_id AS entrez
     FROM omnipath_utils.id_mapping m
@@ -236,7 +183,7 @@ gi_symbol AS (
      AND st.name IN ('genesymbol', 'genesymbol-syn')
     JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'entrez'
 ),
--- gene2accession (backend gene2accession): RefSeq RNA/protein -> entrez DIRECT.
+-- gene2accession: RefSeq RNA/protein -> entrez DIRECT.
 g2a_refseq AS (
     SELECT DISTINCT m.ncbi_tax_id, st.name AS source_type,
            m.source_id AS refseq, m.target_id AS entrez
@@ -245,7 +192,7 @@ g2a_refseq AS (
      AND st.name IN ('refseqn', 'refseqp')
     JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'entrez'
 ),
--- KEGG gene id -> entrez (backend kegg_gene).
+-- KEGG gene id -> entrez.
 kg_entrez AS (
     SELECT DISTINCT m.ncbi_tax_id, m.source_id AS kegg_gene, m.target_id AS entrez
     FROM omnipath_utils.id_mapping m
@@ -272,58 +219,12 @@ egg_tx AS (
     JOIN omnipath_utils.id_type st ON m.source_type_id = st.id AND st.name = 'ensgt'
     JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'ensgg'
 )
--- entrez -> entrez (identity). Aliases here name the view columns for all UNION
--- branches (ncbi_tax_id, source_type, source_id, entrez).
-SELECT DISTINCT ncbi_tax_id, 'entrez' AS source_type, entrez AS source_id, entrez
-FROM up_entrez
-UNION
--- ensg -> entrez (gene space)
-SELECT DISTINCT ncbi_tax_id, 'ensg', ensg, entrez FROM ensg_entrez
-UNION
--- ensp -> ensg -> entrez (protein -> gene -> gene; NOT via uniprot)
-SELECT DISTINCT p.ncbi_tax_id, 'ensp', p.ensp, ge.entrez
-FROM up_ensp p
-JOIN up_ensg g  ON g.ncbi_tax_id = p.ncbi_tax_id AND g.uniprot = p.uniprot
-JOIN ensg_entrez ge ON ge.ncbi_tax_id = p.ncbi_tax_id AND ge.ensg = g.ensg
-UNION
--- genesymbol -> ensg -> entrez (prefer gene space over symbol->uniprot->entrez)
-SELECT DISTINCT s.ncbi_tax_id, 'genesymbol', s.genesymbol, ge.entrez
-FROM up_symbol s
-JOIN up_ensg g  ON g.ncbi_tax_id = s.ncbi_tax_id AND g.uniprot = s.uniprot
-JOIN ensg_entrez ge ON ge.ncbi_tax_id = s.ncbi_tax_id AND ge.ensg = g.ensg
-UNION
--- uniprot -> entrez (the accession itself; uniprot IS a protein, direct is fine),
--- plus uniprot -> ensg -> entrez to recover entries with an ensg but no GeneID.
-SELECT DISTINCT ncbi_tax_id, 'uniprot', uniprot, entrez FROM up_entrez
-UNION
-SELECT DISTINCT g.ncbi_tax_id, 'uniprot', g.uniprot, ge.entrez
-FROM up_ensg g
-JOIN ensg_entrez ge ON ge.ncbi_tax_id = g.ncbi_tax_id AND ge.ensg = g.ensg
-UNION
--- secondary uniprot AC -> primary -> entrez (direct + via the ensg bridge).
-SELECT DISTINCT e.ncbi_tax_id, 'uniprot', sp.sec, e.entrez
-FROM up_entrez e
-JOIN sec_pri sp ON sp.pri = e.uniprot
-WHERE sp.sec IS NOT NULL
-UNION
-SELECT DISTINCT g.ncbi_tax_id, 'uniprot', sp.sec, ge.entrez
-FROM up_ensg g
-JOIN sec_pri sp ON sp.pri = g.uniprot
-JOIN ensg_entrez ge ON ge.ncbi_tax_id = g.ncbi_tax_id AND ge.ensg = g.ensg
-WHERE sp.sec IS NOT NULL
-UNION
--- genesymbol -> entrez DIRECT via a single shared uniprot (supplement to the ensg
--- path): recovers symbols whose UniProt carries a GeneID but no ensg, which the
--- ensg-only route drops (~660 human). Preferred path is still gene-space (ensg);
--- this only ADDS, never removes. True symbol<->entrez needs NCBI gene_info (follow-up).
-SELECT DISTINCT s.ncbi_tax_id, 'genesymbol', s.genesymbol, e.entrez
-FROM up_symbol s
-JOIN up_entrez e ON e.ncbi_tax_id = s.ncbi_tax_id AND e.uniprot = s.uniprot
-UNION
+-- Column names come from the first branch: (ncbi_tax_id, source_type, source_id, entrez).
 -- ===== AUTHORITATIVE gene-space paths (NCBI gene2ensembl + Ensembl BioMart) =====
--- ensp -> entrez DIRECT (gene2ensembl, every transcript, 772 taxa) — the fix for the
--- STITCH/ENSP case that UniProt-derived paths missed.
-SELECT DISTINCT ncbi_tax_id, 'ensp', ensp, entrez FROM g2e_ensp
+-- ensp -> entrez DIRECT (gene2ensembl, every transcript, 772 taxa).
+SELECT DISTINCT ncbi_tax_id, 'ensp'::varchar(64) AS source_type,
+       ensp AS source_id, entrez
+FROM g2e_ensp
 UNION
 -- ensp -> ensg (BioMart) -> entrez (gene2ensembl): catches ENSPs not directly in g2e.
 SELECT DISTINCT b.ncbi_tax_id, 'ensp', b.ensp, ge.entrez
@@ -339,8 +240,7 @@ FROM bm_symbol_ensg s
 JOIN g2e_ensg ge ON ge.ncbi_tax_id = s.ncbi_tax_id AND ge.ensg = s.ensg
 UNION
 -- ===== 007 US1: DIRECT NCBI gene-space + KEGG anchors =====
--- genesymbol (and synonyms) -> entrez DIRECT (gene_info); emitted under
--- 'genesymbol' so synonym-shaped symbol lookups resolve too.
+-- genesymbol (and synonyms) -> entrez DIRECT (gene_info).
 SELECT DISTINCT ncbi_tax_id, 'genesymbol', genesymbol, entrez FROM gi_symbol
 UNION
 -- refseqn / refseqp -> entrez DIRECT (gene2accession).
@@ -364,21 +264,47 @@ UNION
 SELECT DISTINCT t.ncbi_tax_id, 'ensgt', t.ensgt, g.entrez
 FROM egg_tx t
 JOIN egg_symbol e ON e.ncbi_tax_id = t.ncbi_tax_id AND e.ensgg = t.ensgg
-JOIN gi_symbol g ON g.ncbi_tax_id = t.ncbi_tax_id AND g.genesymbol = e.genesymbol;
+JOIN gi_symbol g ON g.ncbi_tax_id = t.ncbi_tax_id AND g.genesymbol = e.genesymbol
+UNION
+-- ===== secondary UniProt AC -> primary -> entrez (curated sec_pri x FTP core) =====
+-- Reformulation of the two old up_entrez/up_ensg secondary-AC branches: the FTP
+-- core already emits every ('uniprot', primary_ac -> entrez) row (direct AND via
+-- the ensg bridge), so a secondary AC anchors by joining resolver_gene_ftp on its
+-- primary, WITHOUT re-scanning id_mapping_ftp. Provably equal to the old
+-- (up_entrez JOIN sec_pri) UNION (up_ensg JOIN sec_pri JOIN ensg_entrez).
+SELECT DISTINCT rgf.ncbi_tax_id, 'uniprot', sp.sec, rgf.entrez
+FROM sec_pri sp
+JOIN omnipath_utils.resolver_gene_ftp rgf
+  ON rgf.source_type = 'uniprot' AND rgf.source_id = sp.pri
+WHERE sp.sec IS NOT NULL;
 
--- Keyed-lookup index: the build probes by (taxon, source_type, source_id); this
--- makes each shard's needed ids index scans on the materialised table.
-CREATE INDEX IF NOT EXISTS resolver_gene_key_idx
-    ON omnipath_utils.resolver_gene (ncbi_tax_id, source_type, source_id);
--- (source_type, source_id) covering index for the build's per-shard keyed join,
--- which does not constrain ncbi_tax_id (see resolver_protein_st_si_idx) -> without
--- this it seq-scans the 78M-row table. Covers entrez for an index-only probe.
-CREATE INDEX IF NOT EXISTS resolver_gene_st_si_idx
-    ON omnipath_utils.resolver_gene (source_type, source_id)
+-- Keyed-lookup indexes (mirror resolver_gene_ftp so the UNION-ALL view probes both
+-- children the same way).
+CREATE INDEX resolver_gene_curated_st_si_idx
+    ON omnipath_utils.resolver_gene_curated (source_type, source_id)
     INCLUDE (ncbi_tax_id, entrez);
--- Reverse probe (by gene) for entrez-anchored lookups.
-CREATE INDEX IF NOT EXISTS resolver_gene_entrez_idx
-    ON omnipath_utils.resolver_gene (ncbi_tax_id, entrez);
+CREATE INDEX resolver_gene_curated_key_idx
+    ON omnipath_utils.resolver_gene_curated (ncbi_tax_id, source_type, source_id);
+ANALYZE omnipath_utils.resolver_gene_curated;
+
+-- resolver_gene: the unchanged name + columns consumers read, now a UNION-ALL view
+-- over the FTP core + the curated delta. Drop whatever kind currently exists (an
+-- earlier materialised view / table, or this view) before recreating.
+DO $$
+DECLARE k "char";
+BEGIN
+  SELECT c.relkind INTO k FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'omnipath_utils' AND c.relname = 'resolver_gene';
+  IF k = 'v' THEN EXECUTE 'DROP VIEW omnipath_utils.resolver_gene CASCADE';
+  ELSIF k = 'm' THEN EXECUTE 'DROP MATERIALIZED VIEW omnipath_utils.resolver_gene CASCADE';
+  ELSIF k = 'r' THEN EXECUTE 'DROP TABLE omnipath_utils.resolver_gene CASCADE';
+  END IF;
+END $$;
+CREATE VIEW omnipath_utils.resolver_gene AS
+SELECT ncbi_tax_id, source_type, source_id, entrez FROM omnipath_utils.resolver_gene_ftp
+UNION ALL
+SELECT ncbi_tax_id, source_type, source_id, entrez FROM omnipath_utils.resolver_gene_curated;
 
 
 -- Combined gene/protein resolver. It emits one canonical target per

@@ -856,14 +856,15 @@ class DatabaseBuilder:
             n, time.time() - start,
         )
 
-    def create_resolver_views(self):
+    def create_resolver_views(self, force_ftp_core: bool = False):
         """(Re)create the canonical resolver projection views (SQL DDL).
 
         Read by omnipath-build via DuckDB ATTACH (spec 002/003; idempotent):
 
         * ``resolver_gene`` — maps any in-scope source id (genesymbol / ensg / ensp
           / uniprot / entrez) to its **NCBI Gene (Entrez) anchor** per taxon (the
-          gene-anchored canonical identity, US7). ~0.65 s/taxon.
+          gene-anchored canonical identity, US7). A VIEW = ``resolver_gene_ftp``
+          UNION ALL ``resolver_gene_curated`` (spec 007 R10 / Phase 3P).
         * ``resolver_protein`` — per-taxon ``source_id -> UniProt`` (primary
           SwissProt where available) — the representative UniProt + the SQL
           replacement for the Python uniprot cleanup in DB-backed mode.
@@ -875,6 +876,18 @@ class DatabaseBuilder:
 
         Applied at the end of every build mode (full / preset / ftp / metabolites)
         so an additive/incremental load never leaves the views stale or missing.
+
+        FTP-core gating (spec 007 R10 / Phase 3P, T065): ``resolver_gene_ftp`` is
+        the expensive id_mapping_ftp-derived half (~3 h to derive). It changes ONLY
+        on an FTP reload — a full FTP load DROPs id_mapping_ftp CASCADE, which drops
+        ``resolver_gene_ftp`` (and, transitively, ``resolver_gene_curated`` and the
+        ``resolver_gene`` view). So its mere absence is the reliable rebuild
+        trigger: rebuild the FTP core only when it is missing (or ``force_ftp_core``
+        is set, which :meth:`populate_from_ftp` passes after a reload). Every
+        additive/curated load reuses the existing FTP core and rebuilds only the
+        cheap ``resolver_gene_curated`` delta (seconds, not hours). The curated file
+        (``resolver_protein.sql``) always runs — it (re)creates the curated delta,
+        the ``resolver_gene`` view, and the combined/global matviews.
         """
         import importlib.resources as ir
 
@@ -882,7 +895,40 @@ class DatabaseBuilder:
 
         conn = get_connection(self._db_url)
         cur = conn.cursor()
-        for sql_file in ('sql/resolver_protein.sql', 'sql/resolver_chemical.sql'):
+
+        # Session tuning for the resolver (re)builds — applies to whichever files
+        # run below (the FTP-core file also SET LOCALs, but on an additive load it
+        # is skipped, so the curated delta + combined/global matview rebuilds would
+        # otherwise fall back to the default 64 MB work_mem and spill). SET LOCAL:
+        # scoped to this transaction, reset at commit.
+        for guc, val in (
+            ('work_mem', os.environ.get('OMNIPATH_UTILS_RESOLVER_WORK_MEM', '4GB')),
+            ('maintenance_work_mem', '4GB'),
+            ('max_parallel_workers_per_gather', '8'),
+            ('max_parallel_workers', '8'),
+            ('max_parallel_maintenance_workers', '8'),
+        ):
+            cur.execute(f"SET LOCAL {guc} = '{val}'")
+
+        cur.execute(
+            f"SELECT to_regclass('{SCHEMA}.resolver_gene_ftp') IS NOT NULL"
+        )
+        ftp_core_present = cur.fetchone()[0]
+        rebuild_ftp_core = force_ftp_core or not ftp_core_present
+
+        sql_files = []
+        if rebuild_ftp_core:
+            sql_files.append('sql/resolver_gene_ftp.sql')
+        else:
+            _log.info(
+                'resolver_gene_ftp present and no FTP reload — skipping the '
+                'FTP-core rebuild; refreshing the curated delta only',
+            )
+        # resolver_protein.sql builds resolver_gene_curated (joins the FTP core),
+        # the resolver_gene UNION-ALL view, and the combined/global matviews.
+        sql_files += ['sql/resolver_protein.sql', 'sql/resolver_chemical.sql']
+
+        for sql_file in sql_files:
             sql = (
                 ir.files('omnipath_utils.db')
                 .joinpath(sql_file)
@@ -891,7 +937,10 @@ class DatabaseBuilder:
             cur.execute(sql)
         conn.commit()
         conn.close()
-        _log.info('Created resolver projection views (protein + chemical)')
+        _log.info(
+            'Created resolver projection views (gene %s + protein + chemical)',
+            'core+delta' if rebuild_ftp_core else 'delta-only',
+        )
 
     def build_reference_tables(self):
         """Build all reference tables (id_types, backends, organisms)."""
@@ -1301,7 +1350,9 @@ class DatabaseBuilder:
             _log.error('Failed to load gene2ensembl: %s', e)
 
         # The resolver projection reads id_mapping_ftp, so (re)create it now.
-        self.create_resolver_views()
+        # id_mapping_ftp was just reloaded (its CASCADE drop already removed the
+        # FTP core), so force the expensive resolver_gene_ftp rebuild (T065).
+        self.create_resolver_views(force_ftp_core=True)
 
         duration = time.time() - start
         _log.info(
