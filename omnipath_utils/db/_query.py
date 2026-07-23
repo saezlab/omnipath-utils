@@ -252,6 +252,132 @@ def _query_table(
     return result, backends_used
 
 
+# ---------------------------------------------------------------------------
+# Deprecated / aged-ID recovery (007 US2, FR-006..009). A post-primary fallback:
+# only still-unmapped ids of a recoverable source_type consult the recovery tables,
+# so the valid-id common path is untouched (FR-007).
+# ---------------------------------------------------------------------------
+
+# query source_type -> [(recovery source_type, recovery target_type, label, tax0)].
+# The recovered current id is in the recovery target_type namespace; a
+# self-referential row (target_id == source_id) means the id is DELETED (no
+# successor). ``tax0`` marks organism-agnostic recovery tables (loaded at tax 0).
+_RECOVERY: dict[str, list[tuple[str, str, str, bool]]] = {
+    'uniprot': [
+        ('uniprot-sec', 'uniprot-pri', 'uniprot_sec', True),
+        ('uniprot-deleted', 'uniprot-deleted', 'uniprot_deleted', True),
+    ],
+    'uniprot-pri': [
+        ('uniprot-sec', 'uniprot-pri', 'uniprot_sec', True),
+        ('uniprot-deleted', 'uniprot-deleted', 'uniprot_deleted', True),
+    ],
+    'entrez': [
+        ('entrez-history', 'entrez', 'gene_history', False),
+        # self-referential rows = discontinued with no successor -> deleted
+        ('entrez-history', 'entrez-history', 'gene_history', False),
+    ],
+    'ensg': [('ensembl-history', 'ensg', 'ensembl_history', False)],
+}
+
+# Collapse an id_type to the namespace used for "same-namespace" recovery returns.
+_RECOVERY_NS = {
+    'uniprot-pri': 'uniprot',
+    'uniprot-sec': 'uniprot',
+    'uniprot-deleted': 'uniprot',
+}
+
+
+def _ns(id_type: str) -> str:
+    return _RECOVERY_NS.get(id_type, id_type)
+
+
+def _recover_query(
+    session: Session,
+    ids: list[str],
+    source_type: str,
+    target_type: str,
+    ncbi_tax_id: int,
+) -> defaultdict:
+    """Forward-only deprecated -> current lookup (no reverse, unlike _query_table)."""
+    result = defaultdict(set)
+    rows = session.execute(
+        text(f"""
+            SELECT m.source_id, m.target_id
+            FROM {SCHEMA}.id_mapping m
+            JOIN {SCHEMA}.id_type st ON m.source_type_id = st.id
+            JOIN {SCHEMA}.id_type tt ON m.target_type_id = tt.id
+            WHERE st.name = :src AND tt.name = :tgt
+            AND (m.ncbi_tax_id = :tax OR m.ncbi_tax_id = 0)
+            AND m.source_id = ANY(:ids)
+        """),
+        {'src': source_type, 'tgt': target_type, 'tax': ncbi_tax_id, 'ids': ids},
+    )
+    for src, tgt in rows:
+        result[src].add(tgt)
+    return result
+
+
+def _recover(
+    session: Session,
+    missing: list[str],
+    source_type: str,
+    target_type: str,
+    ncbi_tax_id: int,
+    result: defaultdict,
+    meta: dict,
+) -> set[str]:
+    """Consult the recovery tables for still-missing ids of a recoverable type.
+
+    Folds recovered current targets into ``result`` and records per-id flags
+    (``recovered`` / ``recovery_source`` / ``ambiguous`` / ``deleted``) in ``meta``
+    (keyed by the normalised lookup id). Returns the backend labels used. Deprecated
+    ids that recover to >1 current identifier return **all** candidates flagged
+    ``ambiguous`` (clarification); a deleted id with no successor is flagged
+    ``deleted`` rather than left empty (FR-008/009).
+    """
+    specs = _RECOVERY.get(source_type)
+    backends: set[str] = set()
+    if not specs:
+        return backends
+    still = list(missing)
+    for rec_src, rec_tgt, label, tax0 in specs:
+        if not still:
+            break
+        tax = 0 if tax0 else ncbi_tax_id
+        rec_map = _recover_query(session, still, rec_src, rec_tgt, tax)
+        if not rec_map:
+            continue
+        backends.add(label)
+        for src_id, currents in rec_map.items():
+            # Self-referential row -> the id is explicitly deleted (no successor).
+            if rec_src == rec_tgt and currents == {src_id}:
+                meta[src_id] = {
+                    'recovered': False, 'deleted': True,
+                    'recovery_source': label, 'ambiguous': False,
+                }
+                continue
+            cur_ns = _ns(rec_tgt)
+            if _ns(target_type) == cur_ns:
+                targets = set(currents)
+            else:
+                # Re-translate the recovered current id to the requested target
+                # via the PRIMARY route (no nested recovery).
+                sub, sub_b = translate_ids(
+                    session, sorted(currents), cur_ns, target_type,
+                    ncbi_tax_id, recover=False,
+                )
+                backends |= sub_b
+                targets = set().union(*sub.values()) if sub else set()
+            if targets:
+                result[src_id] |= targets
+                meta[src_id] = {
+                    'recovered': True, 'deleted': False,
+                    'recovery_source': label, 'ambiguous': len(currents) > 1,
+                }
+        still = [i for i in still if i not in result and i not in meta]
+    return backends
+
+
 def translate_ids(
     session: Session,
     identifiers: list[str] | None,
@@ -259,6 +385,8 @@ def translate_ids(
     target_type: str,
     ncbi_tax_id: int,
     full_uniprot: str = 'fallback',
+    recover: bool = False,
+    recovery_meta: dict | None = None,
 ) -> tuple[dict[str, set[str]], set[str]]:
     """Translate IDs via the database.
 
@@ -336,6 +464,26 @@ def translate_ids(
         for key, vals in ftp_result.items():
             result[key] |= vals  # set union -> deduplicated
         backends_used |= ftp_backends
+
+    # Post-primary deprecated-ID recovery (US2): only still-unmapped ids of a
+    # recoverable source_type consult the recovery tables (FR-007 — the valid path
+    # is untouched). Off by default; the /mapping/translate route opts in.
+    if recover and norm_ids is not None and source_type in _RECOVERY:
+        still_missing = [i for i in norm_ids if not result.get(i)]
+        if still_missing:
+            _meta: dict = {}
+            rec_backends = _recover(
+                session, still_missing, source_type, target_type,
+                ncbi_tax_id, result, _meta,
+            )
+            backends_used |= rec_backends
+            if recovery_meta is not None and _meta:
+                # Re-key recovery flags from normalised keys back to the caller's
+                # original inputs (mirrors _rekey for the result).
+                for orig in identifiers or []:
+                    m = _meta.get(_lookup_key(source_type, orig))
+                    if m:
+                        recovery_meta[orig] = m
 
     return _rekey(result, identifiers, source_type), backends_used
 

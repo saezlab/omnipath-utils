@@ -133,6 +133,8 @@ class DatabaseBuilder:
             'gene2ensembl',
             'gene_info',
             'gene2accession',
+            'gene_history',
+            'ensembl_history',
             'kegg_gene',
             'metanetx',
             'bigg',
@@ -512,6 +514,155 @@ class DatabaseBuilder:
 
         _log.info(
             'Loaded %d secondary->primary UniProt AC pairs (tax 0) in %.1fs',
+            n, time.time() - start,
+        )
+
+    def load_uniprot_deleted(self):
+        """Load the deleted-UniProt-AC marker list (007 US2), organism-agnostic.
+
+        UniProt's deleted-accession lists (SwissProt always; TrEMBL only when
+        ``OMNIPATH_UTILS_DELETED_TREMBL`` is set — it needs >5 GB) name accessions
+        that were removed with **no successor**. They are stored self-referentially
+        (``source_id = target_id``) under ``uniprot-deleted`` at tax 0 so the
+        recovery stage can report such an AC as explicitly *deleted* rather than
+        returning an unexplained empty result (FR-008). Idempotent (DELETE + COPY).
+        """
+        from pypath.inputs.uniprot import swissprot_deleted, trembl_deleted
+        from omnipath_utils.db._connection import get_connection
+
+        with Session(self.engine) as session:
+            t = session.query(IdType).filter_by(name='uniprot-deleted').first()
+            backend = session.query(Backend).filter_by(name='uniprot').first()
+            if not t or not backend:
+                _log.error(
+                    'load_uniprot_deleted: uniprot-deleted id_type or uniprot '
+                    'backend missing; skipping'
+                )
+                return
+            type_id, backend_id = t.id, backend.id
+
+        start = time.time()
+        deleted = set(swissprot_deleted())
+        if os.environ.get('OMNIPATH_UTILS_DELETED_TREMBL'):
+            deleted |= set(trembl_deleted(confirm=False))
+        deleted = sorted(a for a in deleted if a)
+        if self._max_records is not None:
+            deleted = deleted[: self._max_records]
+
+        with Session(self.engine) as session:
+            session.execute(
+                text(
+                    f'DELETE FROM {SCHEMA}.id_mapping WHERE source_type_id = :t '
+                    'AND target_type_id = :t AND ncbi_tax_id = 0 '
+                    'AND backend_id = :b'
+                ),
+                {'t': type_id, 'b': backend_id},
+            )
+            session.commit()
+
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, '
+                    'ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
+                ) as copy:
+                    for ac in deleted:
+                        copy.write_row(
+                            (type_id, type_id, 0, ac[:64], ac[:64], backend_id)
+                        )
+                        n += 1
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d deleted UniProt AC markers (tax 0) in %.1fs',
+            n, time.time() - start,
+        )
+
+    def load_gene_history(self, organisms: list[int] | None = None):
+        """Load NCBI ``gene_history`` — retired Entrez -> current Entrez (007 US2).
+
+        ``gene_history.gz`` gives, per taxon, a discontinued GeneID and the current
+        GeneID it was merged into (``None`` when the gene was removed with no
+        successor). Stored under ``entrez-history``:
+
+        * merged: ``entrez-history`` ``discontinued`` -> ``entrez`` ``current``
+          (the recovery target).
+        * removed with no successor: self-referential ``entrez-history`` ->
+          ``entrez-history`` so the recovery stage can flag it explicitly deleted.
+
+        ``organisms`` restricts to a scope's taxa (``None`` = all taxa, complete
+        scope). Idempotent (DELETE the whole ``entrez-history`` source slice + COPY).
+        """
+        from pypath.inputs.ncbi_gene import gene_history
+        from omnipath_utils.db._connection import get_connection
+
+        with Session(self.engine) as session:
+            hist = session.query(IdType).filter_by(name='entrez-history').first()
+            entrez = session.query(IdType).filter_by(name='entrez').first()
+            backend = session.query(Backend).filter_by(name='gene_history').first()
+            if not backend:
+                backend = Backend(name='gene_history')
+                session.add(backend)
+                session.commit()
+            if not hist or not entrez or not backend:
+                _log.error(
+                    'load_gene_history: entrez-history/entrez id_type or backend '
+                    'missing; skipping'
+                )
+                return
+            hist_id, entrez_id, backend_id = hist.id, entrez.id, backend.id
+
+        taxa = set(organisms) if organisms else None
+        start = time.time()
+
+        with Session(self.engine) as session:
+            session.execute(
+                text(
+                    f'DELETE FROM {SCHEMA}.id_mapping WHERE source_type_id = :h '
+                    'AND backend_id = :b'
+                ),
+                {'h': hist_id, 'b': backend_id},
+            )
+            session.commit()
+
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, '
+                    'ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
+                ) as copy:
+                    for rec in gene_history():
+                        tax = rec.ncbi_tax_id or 0
+                        if taxa is not None and tax not in taxa:
+                            continue
+                        old = rec.discontinued_entrez
+                        if not old:
+                            continue
+                        if rec.entrez:  # merged -> current
+                            copy.write_row((
+                                hist_id, entrez_id, tax,
+                                str(old)[:64], str(rec.entrez)[:64], backend_id,
+                            ))
+                        else:  # removed with no successor -> deleted marker
+                            copy.write_row((
+                                hist_id, hist_id, tax,
+                                str(old)[:64], str(old)[:64], backend_id,
+                            ))
+                        n += 1
+                        if self._max_records is not None and n >= self._max_records:
+                            break
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d gene_history (retired->current Entrez) rows in %.1fs',
             n, time.time() - start,
         )
 
@@ -1125,6 +1276,17 @@ class DatabaseBuilder:
             self.load_uniprot_sec_ac()
         except Exception as e:
             _log.error('Failed to load sec_ac (secondary->primary UniProt): %s', e)
+
+        # Deprecated-ID recovery tables (007 US2): deleted UniProt AC markers
+        # (organism-agnostic) + retired->current Entrez (gene_history, scope taxa).
+        try:
+            self.load_uniprot_deleted()
+        except Exception as e:
+            _log.error('Failed to load uniprot_deleted: %s', e)
+        try:
+            self.load_gene_history(organisms=None if complete else organisms)
+        except Exception as e:
+            _log.error('Failed to load gene_history: %s', e)
 
         # Authoritative ensp/ensg->entrez (NCBI gene2ensembl) — gene-space anchor,
         # all organisms, every transcript (the ENSP-coverage fix).

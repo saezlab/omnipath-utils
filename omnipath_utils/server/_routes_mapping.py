@@ -187,6 +187,7 @@ def _build_translate_response(
     backends_used: set[str],
     backend: str | None,
     loading: bool,
+    recovery: dict | None = None,
 ) -> dict:
     """Build the response dict for translate endpoints."""
 
@@ -210,11 +211,25 @@ def _build_translate_response(
             'Try again in a few minutes.'
         )
 
-    return {
+    response = {
         'results': mapped,
         'unmapped': unmapped,
         'meta': meta,
     }
+
+    # Deprecated-ID recovery flags (007 US2), a parallel map keyed by input id:
+    # {recovered, recovery_source, ambiguous, deleted}. Present only when the
+    # recovery stage flagged at least one input (an id the primary route missed).
+    if recovery:
+        response['recovery'] = recovery
+        meta['total_recovered'] = sum(
+            1 for m in recovery.values() if m.get('recovered')
+        )
+        meta['total_deleted'] = sum(
+            1 for m in recovery.values() if m.get('deleted')
+        )
+
+    return response
 
 
 def _maybe_trigger_load(
@@ -300,6 +315,9 @@ class MappingController(Controller):
 
         id_list = [i.strip() for i in identifiers.split(',') if i.strip()]
 
+        # US2: deprecated-ID recovery is a default API fallback (recover=True),
+        # consulted only for ids the primary route misses; raw mode stays literal.
+        recovery: dict = {}
         result, backends_used = translate_ids(
             session,
             id_list,
@@ -307,6 +325,8 @@ class MappingController(Controller):
             target_resolved,
             ncbi_tax_id,
             full_uniprot=full_uniprot,
+            recover=not raw,
+            recovery_meta=recovery,
         )
 
         # If no results from DB, trigger background load
@@ -345,6 +365,7 @@ class MappingController(Controller):
             backends_used,
             backend,
             loading,
+            recovery=recovery,
         )
 
     @post('/translate')
@@ -381,6 +402,7 @@ class MappingController(Controller):
         id_type_resolved = reg.resolve(id_type) or id_type
         target_resolved = reg.resolve(target_id_type) or target_id_type
 
+        recovery: dict = {}
         result, backends_used = translate_ids(
             session,
             id_list,
@@ -388,6 +410,8 @@ class MappingController(Controller):
             target_resolved,
             ncbi_tax_id,
             full_uniprot=full_uniprot,
+            recover=not raw,
+            recovery_meta=recovery,
         )
 
         # If no results from DB, trigger background load
@@ -426,6 +450,7 @@ class MappingController(Controller):
             backends_used,
             backend,
             loading,
+            recovery=recovery,
         )
 
     @get('/identify')
