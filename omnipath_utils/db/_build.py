@@ -856,50 +856,85 @@ class DatabaseBuilder:
             n, time.time() - start,
         )
 
-    def create_resolver_views(self, force_ftp_core: bool = False):
+    #: The canonical resolver projections, each in its own SQL file so
+    #: :meth:`create_resolver_views` can rebuild them independently (007 R10 /
+    #: Phase 3P). Order matters — later stages read earlier ones.
+    RESOLVER_NAMES = ('gene', 'global', 'protein', 'combined', 'chemical')
+
+    def create_resolver_views(
+        self,
+        force_ftp_core: bool = False,
+        resolvers: 'set[str] | list[str] | None' = None,
+    ):
         """(Re)create the canonical resolver projection views (SQL DDL).
 
         Read by omnipath-build via DuckDB ATTACH (spec 002/003; idempotent):
 
-        * ``resolver_gene`` — maps any in-scope source id (genesymbol / ensg / ensp
-          / uniprot / entrez) to its **NCBI Gene (Entrez) anchor** per taxon (the
-          gene-anchored canonical identity, US7). A VIEW = ``resolver_gene_ftp``
-          UNION ALL ``resolver_gene_curated`` (spec 007 R10 / Phase 3P).
+        * ``resolver_gene`` — any in-scope source id -> its **NCBI Gene (Entrez)
+          anchor** per taxon (US7). A VIEW = ``resolver_gene_ftp`` UNION ALL
+          ``resolver_gene_curated`` (spec 007 R10 / Phase 3P).
         * ``resolver_protein`` — per-taxon ``source_id -> UniProt`` (primary
-          SwissProt where available) — the representative UniProt + the SQL
-          replacement for the Python uniprot cleanup in DB-backed mode.
+          SwissProt where available); the SQL replacement for the Python uniprot
+          cleanup in DB-backed mode.
         * ``resolver_gene_protein_global`` — taxon-agnostic UniProt/Entrez ->
-          Entrez (the full global slice for the showcase/full build, T069/R25).
-        * ``resolver_chemical`` — chemical ``source_id -> InChIKey`` (full PubChem
-          + UniChem cross-refs, spec 003 R7) — the authoritative chemical
-          structure resolution consumed by the full build.
+          Entrez (the full global slice, T069/R25).
+        * ``resolver_gene_protein_combined`` — one canonical target per key (only
+          the pre-built parquet/duckdb resolver mode reads it, not the live-PG
+          keyed path).
+        * ``resolver_chemical`` — chemical ``source_id -> InChIKey`` (spec 003 R7).
 
-        Applied at the end of every build mode (full / preset / ftp / metabolites)
-        so an additive/incremental load never leaves the views stale or missing.
+        Applied at the end of every build mode so an additive/incremental load
+        never leaves the views stale or missing.
 
-        FTP-core gating (spec 007 R10 / Phase 3P, T065): ``resolver_gene_ftp`` is
-        the expensive id_mapping_ftp-derived half (~3 h to derive). It changes ONLY
-        on an FTP reload — a full FTP load DROPs id_mapping_ftp CASCADE, which drops
-        ``resolver_gene_ftp`` (and, transitively, ``resolver_gene_curated`` and the
-        ``resolver_gene`` view). So its mere absence is the reliable rebuild
-        trigger: rebuild the FTP core only when it is missing (or ``force_ftp_core``
-        is set, which :meth:`populate_from_ftp` passes after a reload). Every
-        additive/curated load reuses the existing FTP core and rebuilds only the
-        cheap ``resolver_gene_curated`` delta (seconds, not hours). The curated file
-        (``resolver_protein.sql``) always runs — it (re)creates the curated delta,
-        the ``resolver_gene`` view, and the combined/global matviews.
+        Selective + gated rebuild (007 R10 / Phase 3P, T065/T067). The projections
+        are split across per-resolver SQL files:
+
+        * FTP cores — ``resolver_gene_ftp`` and ``resolver_gene_protein_global`` —
+          derive from the ~46 GB ``id_mapping_ftp`` (the ~3 h cost). They change
+          ONLY on an FTP reload: a full FTP load DROPs id_mapping_ftp CASCADE,
+          dropping them, so their mere absence is the rebuild trigger. Rebuilt only
+          when missing or ``force_ftp_core`` (which :meth:`populate_from_ftp`
+          passes). ``resolver_gene`` (a VIEW) and ``resolver_gene_curated`` /
+          ``resolver_gene_protein_combined`` fall to that CASCADE too, so they are
+          always re-derived below.
+        * Curated deltas — ``resolver_gene_curated`` (+ the ``resolver_gene`` view),
+          ``resolver_protein``, ``resolver_gene_protein_combined``,
+          ``resolver_chemical`` — rebuild from the curated ``id_mapping``.
+
+        ``resolvers`` selects which projections to (re)build: a subset of
+        :attr:`RESOLVER_NAMES`. ``None`` -> the ``OMNIPATH_UTILS_RESOLVERS`` env
+        (comma-separated) if set, else all. For fast P2 iteration on a live utils
+        DB, ``resolvers={'gene'}`` rebuilds only the gene FTP core (if the FTP was
+        reloaded) + the ~166 s curated delta, skipping the 29-34 GB
+        protein/combined/global rebuilds that a gene-space load does not affect.
+        The caller owns cross-resolver dependencies: ``combined`` reads the
+        ``resolver_gene`` view, so build ``gene`` too (or ensure it already exists).
         """
         import importlib.resources as ir
 
         from omnipath_utils.db._connection import get_connection
 
+        if resolvers is None:
+            env = os.environ.get('OMNIPATH_UTILS_RESOLVERS')
+            resolvers = (
+                {r.strip() for r in env.split(',') if r.strip()}
+                if env
+                else set(self.RESOLVER_NAMES)
+            )
+        resolvers = set(resolvers)
+        unknown = resolvers - set(self.RESOLVER_NAMES)
+        if unknown:
+            raise ValueError(
+                f'unknown resolver(s) {sorted(unknown)}; '
+                f'valid: {self.RESOLVER_NAMES}'
+            )
+
         conn = get_connection(self._db_url)
         cur = conn.cursor()
 
-        # Session tuning for the resolver (re)builds — applies to whichever files
-        # run below (the FTP-core file also SET LOCALs, but on an additive load it
-        # is skipped, so the curated delta + combined/global matview rebuilds would
-        # otherwise fall back to the default 64 MB work_mem and spill). SET LOCAL:
+        # Session tuning for the resolver (re)builds. The FTP-core file also
+        # SET LOCALs, but a delta-only run skips it, so the curated rebuilds would
+        # otherwise fall back to the default 64 MB work_mem and spill. SET LOCAL:
         # scoped to this transaction, reset at commit.
         for guc, val in (
             ('work_mem', os.environ.get('OMNIPATH_UTILS_RESOLVER_WORK_MEM', '4GB')),
@@ -910,25 +945,52 @@ class DatabaseBuilder:
         ):
             cur.execute(f"SET LOCAL {guc} = '{val}'")
 
-        cur.execute(
-            f"SELECT to_regclass('{SCHEMA}.resolver_gene_ftp') IS NOT NULL"
-        )
-        ftp_core_present = cur.fetchone()[0]
-        rebuild_ftp_core = force_ftp_core or not ftp_core_present
+        def present(rel: str) -> bool:
+            cur.execute(f"SELECT to_regclass('{SCHEMA}.{rel}') IS NOT NULL")
+            return bool(cur.fetchone()[0])
 
-        sql_files = []
-        if rebuild_ftp_core:
-            sql_files.append('sql/resolver_gene_ftp.sql')
-        else:
-            _log.info(
-                'resolver_gene_ftp present and no FTP reload — skipping the '
-                'FTP-core rebuild; refreshing the curated delta only',
+        # (label, sql file) in dependency order; FTP cores gated on absence.
+        plan: list[tuple[str, str]] = []
+        if 'gene' in resolvers:
+            if force_ftp_core or not present('resolver_gene_ftp'):
+                plan.append(('gene_ftp', 'sql/resolver_gene_ftp.sql'))
+            else:
+                _log.info(
+                    'resolver_gene_ftp present, no FTP reload — skipping the FTP '
+                    'core; rebuilding the curated gene delta only',
+                )
+            plan.append(('gene_curated', 'sql/resolver_gene_curated.sql'))
+        if 'global' in resolvers:
+            if force_ftp_core or not present('resolver_gene_protein_global'):
+                plan.append(('global', 'sql/resolver_global.sql'))
+            else:
+                _log.info(
+                    'resolver_gene_protein_global present, no FTP reload — skipping',
+                )
+        if 'protein' in resolvers:
+            plan.append(('protein', 'sql/resolver_protein.sql'))
+        if 'combined' in resolvers:
+            plan.append(('combined', 'sql/resolver_combined.sql'))
+        if 'chemical' in resolvers:
+            plan.append(('chemical', 'sql/resolver_chemical.sql'))
+
+        # A gene rebuild DROP ... CASCADEs resolver_gene_protein_combined (it reads
+        # the resolver_gene view). If the caller did not also ask to rebuild it,
+        # warn: it is left absent until the next full run (harmless for the live
+        # keyed path, which does not read it).
+        if (
+            'gene' in resolvers
+            and 'combined' not in resolvers
+            and present('resolver_gene_protein_combined')
+        ):
+            _log.warning(
+                'rebuilding gene will drop resolver_gene_protein_combined (it '
+                'reads the resolver_gene view) and it is NOT in this rebuild set — '
+                'it will be absent until the next full build',
             )
-        # resolver_protein.sql builds resolver_gene_curated (joins the FTP core),
-        # the resolver_gene UNION-ALL view, and the combined/global matviews.
-        sql_files += ['sql/resolver_protein.sql', 'sql/resolver_chemical.sql']
 
-        for sql_file in sql_files:
+        for label, sql_file in plan:
+            _log.info('resolver rebuild: %s', label)
             sql = (
                 ir.files('omnipath_utils.db')
                 .joinpath(sql_file)
@@ -938,8 +1000,8 @@ class DatabaseBuilder:
         conn.commit()
         conn.close()
         _log.info(
-            'Created resolver projection views (gene %s + protein + chemical)',
-            'core+delta' if rebuild_ftp_core else 'delta-only',
+            'Resolver projections rebuilt: %s',
+            ', '.join(label for label, _ in plan) or '(none)',
         )
 
     def build_reference_tables(self):
