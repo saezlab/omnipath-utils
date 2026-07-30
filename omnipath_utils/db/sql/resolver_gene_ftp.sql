@@ -137,7 +137,25 @@ UNION
 SELECT DISTINCT s.ncbi_tax_id, 'genesymbol', s.genesymbol, e.entrez
 FROM omnipath_utils._rgf_up_symbol s
 JOIN omnipath_utils._rgf_up_entrez e
-  ON e.ncbi_tax_id = s.ncbi_tax_id AND e.uniprot = s.uniprot;
+  ON e.ncbi_tax_id = s.ncbi_tax_id AND e.uniprot = s.uniprot
+UNION
+-- uniprot -> its idmapping gene symbol -> entrez (NCBI gene_info). Recovers a
+-- UniProt that the idmapping gives ONLY a gene symbol -- no GeneID and no Ensembl
+-- gene -- which is the norm for the TrEMBL long tail of less-studied organisms, so
+-- none of the arms above (direct entrez, ensg bridge) can reach its gene. Anchors
+-- it when its symbol is a real NCBI gene symbol OR a synonym for the same organism
+-- ('genesymbol' + 'genesymbol-syn' in gene_info); the synonym side closes part of
+-- the UniProt-vs-NCBI symbol divergence. gene_info (curated id_mapping) is small
+-- and, like id_mapping_ftp, is refreshed with this FTP core at each gene rebuild.
+SELECT DISTINCT s.ncbi_tax_id, 'uniprot', s.uniprot, gi.entrez
+FROM omnipath_utils._rgf_up_symbol s
+JOIN (
+    SELECT DISTINCT m.ncbi_tax_id, m.source_id AS genesymbol, m.target_id AS entrez
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st ON m.source_type_id = st.id
+     AND st.name IN ('genesymbol', 'genesymbol-syn')
+    JOIN omnipath_utils.id_type tt ON m.target_type_id = tt.id AND tt.name = 'entrez'
+) gi ON gi.ncbi_tax_id = s.ncbi_tax_id AND gi.genesymbol = s.genesymbol;
 
 DROP TABLE omnipath_utils._rgf_up_entrez;
 DROP TABLE omnipath_utils._rgf_up_ensg;
