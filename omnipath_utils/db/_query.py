@@ -276,7 +276,11 @@ _RECOVERY: dict[str, list[tuple[str, str, str, bool]]] = {
         # self-referential rows = discontinued with no successor -> deleted
         ('entrez-history', 'entrez-history', 'gene_history', False),
     ],
-    'ensg': [('ensembl-history', 'ensg', 'ensembl_history', False)],
+    'ensg': [
+        ('ensembl-history', 'ensg', 'ensembl_history', False),
+        # self-referential rows = retired with no successor -> deleted
+        ('ensembl-history', 'ensembl-history', 'ensembl_history', False),
+    ],
 }
 
 # Collapse an id_type to the namespace used for "same-namespace" recovery returns.

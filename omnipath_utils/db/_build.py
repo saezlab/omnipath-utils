@@ -672,6 +672,118 @@ class DatabaseBuilder:
             n, time.time() - start,
         )
 
+    #: Model organisms whose Ensembl gene history is loaded when no scope taxa
+    #: are given (Ensembl main site species). Division species — plants, fungi,
+    #: metazoa — live on a separate FTP and are skipped where absent.
+    _ENSEMBL_HISTORY_DEFAULT_TAXA = (
+        9606, 10090, 10116, 7955, 9913, 9823, 9031, 9615, 9544, 8364,
+    )
+
+    def load_ensembl_history(self, organisms: list[int] | None = None):
+        """Load Ensembl ``stable_id_event`` — retired/merged Ensembl gene ids ->
+        current gene id (007 US2). One species at a time from the Ensembl MySQL
+        FTP:
+
+        * merged / renamed: ``ensembl-history`` old -> ``ensg`` current (the
+          recovery target).
+        * removed with no successor: self-referential ``ensembl-history`` ->
+          ``ensembl-history`` so the recovery stage can flag it deleted.
+
+        ``organisms`` restricts to a scope's taxa; ``None`` uses a default set of
+        model organisms Ensembl's main site covers (division species are on a
+        separate FTP and are skipped). Idempotent (DELETE the whole
+        ``ensembl-history`` source slice + COPY). Honours ``MAX_RECORDS``.
+        """
+        from pypath.inputs.ensembl import ensembl_id_history
+        from omnipath_utils.db._connection import get_connection
+
+        with Session(self.engine) as session:
+            hist = (
+                session.query(IdType).filter_by(name='ensembl-history').first()
+            )
+            ensg = session.query(IdType).filter_by(name='ensg').first()
+            backend = (
+                session.query(Backend).filter_by(name='ensembl_history').first()
+            )
+            if not backend:
+                backend = Backend(name='ensembl_history')
+                session.add(backend)
+                session.commit()
+            if not hist or not ensg or not backend:
+                _log.error(
+                    'load_ensembl_history: ensembl-history/ensg id_type or '
+                    'backend missing; skipping'
+                )
+                return
+            hist_id, ensg_id, backend_id = hist.id, ensg.id, backend.id
+
+        taxa = list(organisms) if organisms else list(
+            self._ENSEMBL_HISTORY_DEFAULT_TAXA
+        )
+        start = time.time()
+
+        with Session(self.engine) as session:
+            session.execute(
+                text(
+                    f'DELETE FROM {SCHEMA}.id_mapping WHERE source_type_id = :h '
+                    'AND backend_id = :b'
+                ),
+                {'h': hist_id, 'b': backend_id},
+            )
+            session.commit()
+
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, '
+                    'ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
+                ) as copy:
+                    for tax in taxa:
+                        try:
+                            events = ensembl_id_history(tax)
+                        except Exception as e:
+                            _log.error(
+                                'load_ensembl_history: taxon %d failed: %s',
+                                tax, e,
+                            )
+                            continue
+                        for rec in events:
+                            old = rec.old
+                            if not old:
+                                continue
+                            if rec.new:  # merged / renamed -> current
+                                copy.write_row((
+                                    hist_id, ensg_id, tax,
+                                    str(old)[:64], str(rec.new)[:64], backend_id,
+                                ))
+                            else:  # removed with no successor -> deleted marker
+                                copy.write_row((
+                                    hist_id, hist_id, tax,
+                                    str(old)[:64], str(old)[:64], backend_id,
+                                ))
+                            n += 1
+                            if (
+                                self._max_records is not None
+                                and n >= self._max_records
+                            ):
+                                break
+                        if (
+                            self._max_records is not None
+                            and n >= self._max_records
+                        ):
+                            break
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d ensembl_history (retired->current Ensembl gene) rows '
+            'in %.1fs',
+            n, time.time() - start,
+        )
+
     def load_gene2ensembl(self):
         """Load NCBI ``gene2ensembl`` — authoritative ensp/ensg -> entrez, all taxa.
 
@@ -1305,6 +1417,12 @@ class DatabaseBuilder:
             self.load_gene_history(organisms=None if complete else organisms)
         except Exception as e:
             _log.error('Failed to load gene_history: %s', e)
+        try:
+            self.load_ensembl_history(
+                organisms=None if complete else organisms,
+            )
+        except Exception as e:
+            _log.error('Failed to load ensembl_history: %s', e)
 
         # Authoritative ensp/ensg->entrez (NCBI gene2ensembl) — gene-space anchor,
         # all organisms, every transcript (the ENSP-coverage fix).
