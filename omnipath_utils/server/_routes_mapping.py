@@ -530,6 +530,8 @@ class MappingController(Controller):
                 'label': (reg.info(name) or {}).get('label'),
                 'entity_type': (reg.info(name) or {}).get('entity_type'),
                 'curie_prefix': (reg.info(name) or {}).get('curie_prefix'),
+                'url_pattern': reg.url_pattern(name),
+                'id_pattern': reg.id_pattern(name),
             }
             for name in reg.all_names()
         ]

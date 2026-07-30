@@ -102,16 +102,22 @@ class DatabaseBuilder:
         with Session(self.engine) as session:
             for name in registry.all_names():
                 info = registry.info(name)
+                # Also write the CURIE + URL/id-pattern metadata, and update it
+                # on an existing row so a cumulative build picks up registry
+                # changes (the table is otherwise insert-only for id types).
+                fields = {
+                    'label': info.get('label'),
+                    'entity_type': info.get('entity_type'),
+                    'curie_prefix': info.get('curie_prefix'),
+                    'url_pattern': registry.url_pattern(name),
+                    'id_pattern': registry.id_pattern(name),
+                }
                 existing = session.query(IdType).filter_by(name=name).first()
-                if not existing:
-                    session.add(
-                        IdType(
-                            name=name,
-                            label=info.get('label'),
-                            entity_type=info.get('entity_type'),
-                            curie_prefix=info.get('curie_prefix'),
-                        )
-                    )
+                if existing:
+                    for column, value in fields.items():
+                        setattr(existing, column, value)
+                else:
+                    session.add(IdType(name=name, **fields))
             session.commit()
 
         _log.info('Populated %d ID types', len(registry))

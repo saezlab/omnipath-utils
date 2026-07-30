@@ -4,6 +4,11 @@
 #   label          — human-readable name
 #   entity_type    — protein | gene | transcript | small_molecule | mirna | probe
 #   curie_prefix   — Bioregistry CURIE prefix (omitted when none known)
+#   url_pattern    — optional URL template for a resolvable link; {$id} is the
+#                    identifier placeholder. Omit to derive the Bioregistry
+#                    resolver template from curie_prefix; set it to point at a
+#                    provider's native page instead.
+#   id_pattern     — optional regular expression a valid identifier matches
 #   backends       — mapping to backend-specific column names
 #   aliases        — alternative names that resolve to this type
 
@@ -15,6 +20,7 @@ uniprot:
   label: UniProt AC
   entity_type: protein
   curie_prefix: uniprot
+  id_pattern: '^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$'
   backends:
     uniprot: accession
     uploadlists: UniProtKB

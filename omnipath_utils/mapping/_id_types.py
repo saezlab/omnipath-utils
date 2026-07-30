@@ -112,6 +112,53 @@ class IdTypeRegistry:
 
         return info.get('curie_prefix') if info else None
 
+    def url_pattern(self, name: str) -> str | None:
+        """Get a URL template that resolves an identifier to its web page.
+
+        An explicit ``url_pattern`` in the registry wins (use it to point at a
+        provider's native page). Otherwise, when a Bioregistry CURIE prefix is
+        known, the Bioregistry resolver template is derived so every typed
+        identifier gets a working link with no per-type curation. ``{$id}`` is
+        the placeholder a consumer replaces with the identifier.
+
+        Args:
+            name: ID type name or alias.
+
+        Returns:
+            URL template string, or None when neither an explicit pattern nor a
+            CURIE prefix is available.
+        """
+
+        info = self.info(name)
+
+        if not info:
+            return None
+
+        explicit = info.get('url_pattern')
+
+        if explicit:
+            return explicit
+
+        prefix = info.get('curie_prefix')
+
+        return f'https://bioregistry.io/{prefix}:{{$id}}' if prefix else None
+
+    def id_pattern(self, name: str) -> str | None:
+        """Get a regular expression a valid identifier of this type matches.
+
+        Only returned when the registry declares one explicitly.
+
+        Args:
+            name: ID type name or alias.
+
+        Returns:
+            Regular-expression string, or None.
+        """
+
+        info = self.info(name)
+
+        return info.get('id_pattern') if info else None
+
     def backend_column(self, name: str, backend: str) -> str | None:
         """Get the backend-specific column name for an ID type.
 
