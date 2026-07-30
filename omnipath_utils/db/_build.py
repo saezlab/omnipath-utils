@@ -1029,6 +1029,9 @@ class DatabaseBuilder:
           cleanup in DB-backed mode.
         * ``resolver_gene_protein_global`` — taxon-agnostic UniProt/Entrez ->
           Entrez (the full global slice, T069/R25).
+        * ``resolver_uniprot_taxon`` — UniProt accession -> organism, so the build
+          can recover the organism of a protein mention that cited an accession
+          but no species. An FTP core alongside ``resolver_gene_ftp``.
         * ``resolver_gene_protein_combined`` — one canonical target per key (only
           the pre-built parquet/duckdb resolver mode reads it, not the live-PG
           keyed path).
@@ -1040,8 +1043,9 @@ class DatabaseBuilder:
         Selective + gated rebuild (007 R10 / Phase 3P, T065/T067). The projections
         are split across per-resolver SQL files:
 
-        * FTP cores — ``resolver_gene_ftp`` and ``resolver_gene_protein_global`` —
-          derive from the ~46 GB ``id_mapping_ftp`` (the ~3 h cost). They change
+        * FTP cores — ``resolver_gene_ftp``, ``resolver_gene_protein_global`` and
+          ``resolver_uniprot_taxon`` — derive from the ~46 GB ``id_mapping_ftp``
+          (the ~3 h cost). They change
           ONLY on an FTP reload: a full FTP load DROPs id_mapping_ftp CASCADE,
           dropping them, so their mere absence is the rebuild trigger. Rebuilt only
           when missing or ``force_ftp_core`` (which :meth:`populate_from_ftp`
@@ -1109,6 +1113,14 @@ class DatabaseBuilder:
                 _log.info(
                     'resolver_gene_ftp present, no FTP reload — skipping the FTP '
                     'core; rebuilding the curated gene delta only',
+                )
+            # accession -> organism, an FTP core alongside resolver_gene_ftp:
+            # both derive from id_mapping_ftp and change only on an FTP reload.
+            if force_ftp_core or not present('resolver_uniprot_taxon'):
+                plan.append(('uniprot_taxon', 'sql/resolver_uniprot_taxon.sql'))
+            else:
+                _log.info(
+                    'resolver_uniprot_taxon present, no FTP reload — skipping',
                 )
             plan.append(('gene_curated', 'sql/resolver_gene_curated.sql'))
         if 'global' in resolvers:
