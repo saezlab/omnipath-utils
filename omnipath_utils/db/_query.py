@@ -76,6 +76,43 @@ def strip_curie(id_type: str, identifier: str) -> str:
     return s
 
 
+def uniprot_organism(
+    session: Session,
+    accessions: list[str],
+) -> dict[str, int | None]:
+    """Map UniProt accessions to their source organism (NCBI taxon id).
+
+    Reads the resolver's accession -> organism map, so it answers even for
+    accessions with no gene/protein resolution (the TrEMBL long tail of
+    less-studied organisms). Each accession is normalised (a CURIE prefix is
+    stripped and an isoform ``-<n>`` suffix removed) before lookup. Returns a
+    dict keyed by the ORIGINAL input; the value is the taxon id, or ``None`` when
+    the accession is unknown.
+    """
+    import re
+
+    from sqlalchemy import text
+
+    normalised = {
+        ac: re.sub(r'-[0-9]+$', '', strip_curie('uniprot', ac))
+        for ac in accessions
+    }
+    keys = sorted({k for k in normalised.values() if k})
+
+    found: dict[str, int] = {}
+    if keys:
+        rows = session.execute(
+            text(
+                f'SELECT uniprot, ncbi_tax_id FROM {SCHEMA}.resolver_uniprot_taxon '
+                'WHERE uniprot = ANY(:keys)'
+            ),
+            {'keys': keys},
+        ).all()
+        found = {u: t for u, t in rows}
+
+    return {ac: found.get(normalised[ac]) for ac in accessions}
+
+
 def _lookup_key(source_type: str, identifier: str) -> str:
     """The normalised storage key for one query identifier.
 

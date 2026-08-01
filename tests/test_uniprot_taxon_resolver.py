@@ -94,3 +94,36 @@ class TestLive:
                 )
             ).scalar()
         assert dupes == 0
+
+
+@pytest.mark.skipif(
+    not os.environ.get('OMNIPATH_UTILS_TEST_DB'),
+    reason='set OMNIPATH_UTILS_TEST_DB to a built instance to run',
+)
+class TestOrganismQuery:
+    def _run(self, accessions):
+        from sqlalchemy.orm import Session
+
+        from omnipath_utils.db._connection import get_engine
+        from omnipath_utils.db._query import uniprot_organism
+
+        engine = get_engine(os.environ['OMNIPATH_UTILS_TEST_DB'])
+        with Session(engine) as session:
+            return uniprot_organism(session, accessions)
+
+    def test_known_accessions(self):
+        out = self._run(['A0A8M9QHZ6', 'Q9QBY3', 'P04637'])
+        assert out['A0A8M9QHZ6'] == 7955
+        assert out['Q9QBY3'] == 388906
+        assert out['P04637'] == 9606
+
+    def test_isoform_and_curie_are_normalised(self):
+        # An isoform suffix and a CURIE prefix both resolve to the base
+        # accession's organism, keyed by the input as sent.
+        out = self._run(['A0A8M9QHZ6-2', 'uniprot:P04637'])
+        assert out['A0A8M9QHZ6-2'] == 7955
+        assert out['uniprot:P04637'] == 9606
+
+    def test_unknown_accession_is_none(self):
+        out = self._run(['NOTANACCESSION'])
+        assert out['NOTANACCESSION'] is None

@@ -13,6 +13,7 @@ from omnipath_utils.db._query import (
     translate_ids,
     chain_translate,
     get_all_mappings,
+    uniprot_organism,
 )
 
 _log = logging.getLogger(__name__)
@@ -514,6 +515,30 @@ class MappingController(Controller):
                 'ncbi_tax_id': ncbi_tax_id,
                 'total_input': len(id_list),
             },
+        }
+
+    @get('/organism')
+    async def organism(
+        self,
+        session: Session,
+        uniprot: str = Parameter(
+            description='Comma-separated UniProt accessions',
+        ),
+    ) -> dict:
+        """Return the source organism (NCBI taxon id) of UniProt accessions.
+
+        Backed by the resolver's accession -> organism map, so it answers even
+        for accessions with no gene/protein resolution (the TrEMBL long tail).
+        Accessions may carry a CURIE prefix or an isoform suffix. The response
+        is keyed by the accession as sent; an unknown accession maps to null.
+        """
+
+        accessions = [a.strip() for a in uniprot.split(',') if a.strip()]
+        result = uniprot_organism(session, accessions)
+
+        return {
+            'results': result,
+            'meta': {'total_input': len(accessions)},
         }
 
     @get('/id-types')
