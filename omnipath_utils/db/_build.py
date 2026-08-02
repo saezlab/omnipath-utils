@@ -1125,6 +1125,304 @@ class DatabaseBuilder:
             n, time.time() - start,
         )
 
+    def load_mane(self, organisms=None):
+        """Load the MANE matched RefSeq<->Ensembl transcript set (human).
+
+        MANE gives, per human gene, one agreed-upon transcript with matching
+        RefSeq and Ensembl RNA/protein accessions plus the Entrez/Ensembl gene
+        and symbol. Two kinds of rows are stored (007 US3):
+
+        * gene anchors — refseqn/refseqp/enst/ensp/ensg/genesymbol -> ``entrez``
+          (the ``resolver_gene`` picks these up like any other gene-space pair);
+        * transcript cross-links — ``enst`` <-> ``refseqn`` and ``ensp`` <->
+          ``refseqp`` (both directions) so a RefSeq transcript translates to its
+          Ensembl counterpart and back.
+
+        MANE is human-only; skipped when 9606 is not in ``organisms`` (``None``
+        or the ``complete`` scope always loads it). Idempotent (DELETE the
+        ``mane`` backend slice then COPY). Honours ``MAX_RECORDS``.
+        """
+        if organisms is not None and 9606 not in organisms:
+            _log.info('load_mane: human (9606) not in scope; skipping')
+            return
+
+        from pypath.inputs.mane import mane_summary
+        from omnipath_utils.db._connection import get_connection
+
+        with Session(self.engine) as session:
+            ids = {
+                name: (t.id if t else None)
+                for name, t in (
+                    (n, session.query(IdType).filter_by(name=n).first())
+                    for n in (
+                        'entrez', 'refseqn', 'refseqp', 'enst', 'ensp', 'ensg',
+                        'genesymbol',
+                    )
+                )
+            }
+            backend = session.query(Backend).filter_by(name='mane').first()
+            if not backend:
+                backend = Backend(name='mane')
+                session.add(backend)
+                session.commit()
+            if not ids['entrez']:
+                _log.error('load_mane: entrez id_type missing; skipping')
+                return
+            backend_id = backend.id
+
+        entrez_id = ids['entrez']
+        start = time.time()
+        with Session(self.engine) as session:
+            session.execute(
+                text(f'DELETE FROM {SCHEMA}.id_mapping WHERE backend_id = :b'),
+                {'b': backend_id},
+            )
+            session.commit()
+
+        seen: set[tuple] = set()
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, '
+                    'ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
+                ) as copy:
+                    for rec in mane_summary():
+                        if rec.entrez is None:
+                            continue
+                        vals = {
+                            'refseqn': rec.refseq_rna,
+                            'refseqp': rec.refseq_protein,
+                            'enst': rec.ensembl_transcript,
+                            'ensp': rec.ensembl_protein,
+                            'ensg': rec.ensembl_gene,
+                            'genesymbol': rec.symbol,
+                        }
+                        rows = []
+                        # gene anchors: every present id -> entrez
+                        for name, val in vals.items():
+                            if ids[name] is not None and val:
+                                rows.append((ids[name], entrez_id, val, rec.entrez))
+                        # transcript cross-links (both directions)
+                        for a, b in (('enst', 'refseqn'), ('ensp', 'refseqp')):
+                            if (
+                                ids[a] is not None and ids[b] is not None
+                                and vals[a] and vals[b]
+                            ):
+                                rows.append((ids[a], ids[b], vals[a], vals[b]))
+                                rows.append((ids[b], ids[a], vals[b], vals[a]))
+                        for src_id, tgt_id, sval, tval in rows:
+                            key = (src_id, tgt_id, sval, tval)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            copy.write_row((
+                                src_id, tgt_id, rec.ncbi_tax_id,
+                                sval[:64], tval[:64], backend_id,
+                            ))
+                            n += 1
+                        if self._max_records and n >= self._max_records:
+                            break
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d MANE RefSeq<->Ensembl rows in %.1fs',
+            n, time.time() - start,
+        )
+
+    def load_taxonomy_species(self):
+        """Load the NCBI Taxonomy strain -> species map into ``taxon_species``.
+
+        Walks ``nodes.dmp`` up the taxonomic tree so any ``tax_id`` (strain,
+        sub-species, or the species itself) resolves to its species-level
+        ancestor. A species maps to itself; a genus-or-above taxid with no
+        species-level ancestor keeps its own taxid. Retired taxids (``merged.dmp``)
+        are canonicalised to the species of their current taxid too, so lookups
+        on an old id still hit. Organism-agnostic (no scope). Idempotent (DELETE
+        the whole derived table + COPY). Honours ``MAX_RECORDS``.
+        """
+        from pypath.inputs.ncbi_taxonomy import taxonomy_nodes, taxonomy_merged
+        from omnipath_utils.db._connection import get_connection
+
+        start = time.time()
+
+        # retired taxid -> current taxid
+        merged = {rec.old_tax_id: rec.new_tax_id for rec in taxonomy_merged()}
+
+        # the taxonomic tree (parent) and each taxon's rank
+        parent: dict[int, int] = {}
+        ranks: dict[int, str] = {}
+        for rec in taxonomy_nodes():
+            parent[rec.tax_id] = rec.parent_tax_id
+            ranks[rec.tax_id] = rec.rank
+
+        def species_of(t):
+            t = merged.get(t, t)
+            seen_t: set[int] = set()
+            cur = t
+            while cur is not None and cur not in seen_t:
+                seen_t.add(cur)
+                if ranks.get(cur) == 'species':
+                    return cur
+                p = parent.get(cur)
+                if p is None or p == cur:  # reached root (taxid 1 is its own parent)
+                    break
+                cur = p
+            return t  # no species-level ancestor -> keep original
+
+        with Session(self.engine) as session:
+            session.execute(text(f'DELETE FROM {SCHEMA}.taxon_species'))
+            session.commit()
+
+        seen: set[int] = set()
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.taxon_species (tax_id, species_tax_id) '
+                    'FROM STDIN'
+                ) as copy:
+                    # every known taxon -> its species (a species maps to itself)
+                    for tax_id in ranks:
+                        if tax_id in seen:
+                            continue
+                        seen.add(tax_id)
+                        copy.write_row((tax_id, species_of(tax_id)))
+                        n += 1
+                        if self._max_records and n >= self._max_records:
+                            break
+                    else:
+                        # retired taxid -> species of its current taxid
+                        for old_tax_id, new_tax_id in merged.items():
+                            if old_tax_id in seen:
+                                continue
+                            seen.add(old_tax_id)
+                            copy.write_row((old_tax_id, species_of(new_tax_id)))
+                            n += 1
+                            if self._max_records and n >= self._max_records:
+                                break
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d taxon->species rows in %.1fs',
+            n, time.time() - start,
+        )
+
+    def load_rnacentral_mirbase_gene(self, organisms=None):
+        """Load an RNAcentral miRBase -> gene bridge into ``id_mapping``.
+
+        Cross-references miRBase accessions (``MI####``/``MIMAT####``) to Ensembl
+        gene ids (``ensg``) and gene symbols (``genesymbol``) via their shared
+        RNAcentral ``URS`` accession: ``ensembl.tsv`` and ``hgnc.tsv`` give
+        ``URS -> ENSG``/``URS -> symbol``, ``mirbase.tsv`` gives ``URS ->
+        miRBase``. ``organisms`` restricts to a scope's taxa (``None`` = all).
+        Stored under the ``rnacentral`` backend. Idempotent (DELETE the backend
+        slice + COPY). Honours ``MAX_RECORDS``.
+        """
+        from pypath.inputs.rnacentral import rnacentral_xref
+        from omnipath_utils.db._connection import get_connection
+
+        taxa = set(organisms) if organisms else None
+
+        with Session(self.engine) as session:
+            mirbase = session.query(IdType).filter_by(name='mirbase').first()
+            ensg = session.query(IdType).filter_by(name='ensg').first()
+            symbol = session.query(IdType).filter_by(name='genesymbol').first()
+            backend = (
+                session.query(Backend).filter_by(name='rnacentral').first()
+            )
+            if not backend:
+                backend = Backend(name='rnacentral')
+                session.add(backend)
+                session.commit()
+            if not mirbase:
+                _log.error(
+                    'load_rnacentral_mirbase_gene: mirbase id_type missing; '
+                    'skipping'
+                )
+                return
+            mirbase_id, backend_id = mirbase.id, backend.id
+            ensg_id = ensg.id if ensg else None
+            symbol_id = symbol.id if symbol else None
+
+        start = time.time()
+
+        # URS -> ENSG / symbol, scoped to the requested taxa
+        urs_to_ensg: dict[str, set[str]] = {}
+        for rec in rnacentral_xref('ensembl'):
+            if taxa is not None and rec.ncbi_tax_id not in taxa:
+                continue
+            if not rec.rnacentral or not rec.gene_name:
+                continue
+            ensg_val = rec.gene_name.split('.', 1)[0]
+            if ensg_val:
+                urs_to_ensg.setdefault(rec.rnacentral, set()).add(ensg_val)
+
+        urs_to_symbol: dict[str, set[str]] = {}
+        for rec in rnacentral_xref('hgnc'):
+            if taxa is not None and rec.ncbi_tax_id not in taxa:
+                continue
+            if not rec.rnacentral or not rec.gene_name:
+                continue
+            urs_to_symbol.setdefault(rec.rnacentral, set()).add(rec.gene_name)
+
+        with Session(self.engine) as session:
+            session.execute(
+                text(f'DELETE FROM {SCHEMA}.id_mapping WHERE backend_id = :b'),
+                {'b': backend_id},
+            )
+            session.commit()
+
+        seen: set[tuple] = set()
+        conn = get_connection(self._db_url)
+        n = 0
+        try:
+            with conn.cursor() as cur:
+                with cur.copy(
+                    f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, '
+                    'ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
+                ) as copy:
+                    for rec in rnacentral_xref('mirbase'):
+                        if taxa is not None and rec.ncbi_tax_id not in taxa:
+                            continue
+                        urs = rec.rnacentral
+                        mi = rec.external_id
+                        if not urs or not mi:
+                            continue
+                        rows = []
+                        if ensg_id is not None:
+                            for ensg_val in urs_to_ensg.get(urs, ()):
+                                rows.append((ensg_id, ensg_val))
+                        if symbol_id is not None:
+                            for sym in urs_to_symbol.get(urs, ()):
+                                rows.append((symbol_id, sym))
+                        for tgt_id, tval in rows:
+                            key = (tgt_id, rec.ncbi_tax_id, mi, tval)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            copy.write_row((
+                                mirbase_id, tgt_id, rec.ncbi_tax_id,
+                                mi[:64], tval[:64], backend_id,
+                            ))
+                            n += 1
+                        if self._max_records and n >= self._max_records:
+                            break
+            conn.commit()
+        finally:
+            conn.close()
+
+        _log.info(
+            'Loaded %d RNAcentral miRBase->gene rows in %.1fs',
+            n, time.time() - start,
+        )
+
     #: The canonical resolver projections, each in its own SQL file so
     #: :meth:`create_resolver_views` can rebuild them independently (007 R10 /
     #: Phase 3P). Order matters — later stages read earlier ones.
@@ -1442,6 +1740,27 @@ class DatabaseBuilder:
             self.load_gene2accession(organisms=gene_space_taxa)
         except Exception as e:
             _log.error('Failed to load gene2accession: %s', e)
+
+        # MANE matched RefSeq<->Ensembl transcript set (human; 007 US3). Loaded
+        # whenever human is in scope (complete always).
+        try:
+            self.load_mane(organisms=None if complete else organisms)
+        except Exception as e:
+            _log.error('Failed to load MANE: %s', e)
+
+        # NCBI Taxonomy strain->species map (organism-agnostic).
+        try:
+            self.load_taxonomy_species()
+        except Exception as e:
+            _log.error('Failed to load taxonomy_species: %s', e)
+
+        # RNAcentral miRBase->gene (ensg/genesymbol) bridge.
+        try:
+            self.load_rnacentral_mirbase_gene(
+                organisms=None if complete else organisms
+            )
+        except Exception as e:
+            _log.error('Failed to load rnacentral_mirbase_gene: %s', e)
 
         # KEGG gene ids -> entrez/uniprot. Per-organism REST calls, so only for
         # an explicit organism list (skipped for complete: KEGG has no bulk

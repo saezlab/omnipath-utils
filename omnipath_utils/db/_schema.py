@@ -242,3 +242,21 @@ class Orthology(Base):
     orth_type: Mapped[str | None] = mapped_column(String(16))
     n_sources: Mapped[int | None] = mapped_column(Integer)
     support: Mapped[str | None] = mapped_column(Text)
+
+
+class TaxonSpecies(Base):
+    """Any taxon -> its species-level taxon (derived from NCBI Taxonomy).
+
+    Maps a strain/sub-species (or any) ``tax_id`` to its species-level ancestor
+    (``species_tax_id``), so a lookup keyed on any taxid always resolves to the
+    species. A species maps to itself; a genus-or-above taxid with no
+    species-level ancestor keeps its own taxid. Fully derived (DELETE + reload).
+    """
+
+    __tablename__ = 'taxon_species'
+    __table_args__ = {'schema': 'omnipath_utils'}
+
+    tax_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    species_tax_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, index=True
+    )
