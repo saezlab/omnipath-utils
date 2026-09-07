@@ -2270,6 +2270,12 @@ class DatabaseBuilder:
         )
         return row_count
 
+    #: Builders whose failure fails the whole build, not just a warning.
+    #: HMDB carries the richest per-metabolite cross-reference block in the
+    #: field (spec 011 T011). Silently continuing without it would repeat
+    #: the gap cycle 005 already left unmeasured for a full cycle.
+    _REQUIRED_LONG_BUILDERS = {'hmdb'}
+
     def _populate_chemical_long(self):
         """Build the long-value chemical layer in ``id_mapping_long``:
         names (name/synonym/iupac/traditional_iupac) and structures
@@ -2293,6 +2299,8 @@ class DatabaseBuilder:
             try:
                 fn()
             except Exception as e:
+                if label in self._REQUIRED_LONG_BUILDERS:
+                    raise
                 _log.warning('chemical_long: %s builder failed: %s', label, e)
 
         self._record_long_rollups()
@@ -2387,25 +2395,33 @@ class DatabaseBuilder:
         _log.info('chemical_long chebi: %d rows', n)
 
     def _long_hmdb(self):
-        """HMDB synonyms -> chebi/hmdb. US1 (T016).
+        """HMDB names/synonyms <-> hmdb + xref ids + structures. US1 (T016).
 
-        HMDB's native ``hmdb_metabolites.zip`` is behind Cloudflare and may fail
-        to download; the dispatcher isolates that failure and HMDB coverage
-        still arrives via ChEBI's ``hmdb`` xref and RaMP's HMDB-derived
-        synonyms.
+        HMDB carries the richest per-metabolite cross-reference block in the
+        field: ChEBI, KEGG, PubChem, DrugBank and FooDB, each on the same
+        record. The project mirrors the archive on its own host
+        (``pypath.inputs_v2.hmdb``). This reads it directly, unlike the
+        legacy ``pypath.inputs.hmdb`` path, which reached only a narrow
+        synonym-to-ChEBI slice and needed HMDB's site to stay up.
         """
-        from pypath.inputs.hmdb import metabolites as hmdb_meta
+        from omnipath_utils.mapping.backends._inputs_v2_adapter import raw_rows
 
-        sc = hmdb_meta.synonyms_chebi()  # {synonym: chebi or {chebi}}
-        syn_chebi: dict = {}
-        for syn, chebi in sc.items():
-            vals = chebi if isinstance(chebi, (set, list, tuple)) else {chebi}
-            syn_chebi.setdefault(str(syn), set()).update(
-                f'CHEBI:{v}' if not str(v).startswith('CHEBI:') else str(v)
-                for v in vals if v
-            )
-        n = self._populate_long_slice(syn_chebi, 'synonym', 'chebi', 'hmdb')
-        _log.info('chemical_long hmdb: %d synonym->chebi rows', n)
+        rows = raw_rows('hmdb', 'metabolites', self._effective_limit('hmdb'))
+        for row in rows:
+            synonyms = row.get('synonyms')
+            if isinstance(synonyms, str):
+                row['synonyms'] = [s for s in synonyms.split(';') if s]
+        n = self._emit_long_relations(
+            rows, 'hmdb',
+            name_cols={'name': 'name', 'synonym': 'synonyms'},
+            id_cols={
+                'hmdb': 'accession', 'chebi': 'chebi_id', 'kegg': 'kegg_id',
+                'pubchem': 'pubchem_compound_id', 'drugbank': 'drugbank_id',
+                'foodb': 'foodb_id',
+            },
+            struct_cols={'inchi': 'inchi', 'smiles': 'smiles'},
+        )
+        _log.info('chemical_long hmdb: %d rows', n)
 
     def _long_chembl(self):
         """ChEMBL name/synonym <-> chembl/chebi + structures. US2 (T024)."""
