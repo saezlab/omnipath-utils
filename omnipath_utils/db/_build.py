@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from omnipath_utils.db._schema import Base, IdType, Backend, Organism, BuildInfo
 from omnipath_utils.db._connection import SCHEMA, get_engine, ensure_schema
-from omnipath_utils.mapping._id_types import IdTypeRegistry
+from omnipath_utils.mapping._id_types import IdTypeRegistry, normalize_identifier
 from omnipath_utils.taxonomy._taxonomy import TaxonomyManager
 
 _log = logging.getLogger(__name__)
@@ -283,14 +283,21 @@ class DatabaseBuilder:
                 f'COPY {SCHEMA}.id_mapping (source_type_id, target_type_id, ncbi_tax_id, source_id, target_id, backend_id) FROM STDIN'
             ) as copy:
                 for source_id, target_ids in data.items():
+                    stored_source_id = (
+                        normalize_identifier(id_type, source_id) or source_id
+                    )
                     for target_id in target_ids:
+                        stored_target_id = (
+                            normalize_identifier(target_id_type, target_id)
+                            or target_id
+                        )
                         copy.write_row(
                             (
                                 src_type_id,
                                 tgt_type_id,
                                 ncbi_tax_id,
-                                source_id[:64],
-                                target_id[:64],
+                                stored_source_id[:64],
+                                stored_target_id[:64],
                                 backend_id,
                             )
                         )

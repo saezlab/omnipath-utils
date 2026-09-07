@@ -40,6 +40,22 @@ CREATE MATERIALIZED VIEW omnipath_utils.resolver_chemical AS
 WITH ik AS (SELECT id FROM omnipath_utils.id_type WHERE name = 'inchikey'),
      pc AS (SELECT id FROM omnipath_utils.id_type WHERE name = 'pubchem'),
      ce AS (SELECT id FROM omnipath_utils.id_type WHERE name = 'chebi'),
+-- One value_pattern per chemical namespace (mirrors _VALUE_PATTERNS in
+-- omnipath_utils/mapping/_id_types.py -- keep the two in sync). A source_id
+-- that fails its own namespace's pattern -- a KEGG DRUG accession sitting
+-- in the 'kegg' slot, say -- must never contribute a structure candidate
+-- (spec.md US1 acceptance scenario 3/4).
+source_pattern (source_type, pattern) AS (
+    VALUES
+        ('chebi',             '^CHEBI:\d+$'),
+        ('hmdb',              '^HMDB\d{7}$'),
+        ('swisslipids',       '^SLM:\d+$'),
+        ('lipidmaps',         '^LM[A-Z0-9]+$'),
+        ('kegg',              '^C\d{5}$'),
+        ('pubchem',           '^([1-9]\d*|0)$'),
+        ('pubchem_substance', '^([1-9]\d*|0)$'),
+        ('chembl',            '^CHEMBL\d+$')
+),
 pubchem_ik AS (
     SELECT m.source_id AS hub, m.target_id AS inchikey
     FROM omnipath_utils.id_mapping m
@@ -56,32 +72,63 @@ direct AS (
     SELECT st.name AS source_type, m.source_id, m.target_id AS inchikey
     FROM omnipath_utils.id_mapping m
     JOIN omnipath_utils.id_type st ON st.id = m.source_type_id
+    LEFT JOIN source_pattern sp ON sp.source_type = st.name
     WHERE m.target_type_id = (SELECT id FROM ik)
+      AND (sp.pattern IS NULL OR m.source_id ~ sp.pattern)
 ),
 bridge_pubchem AS (
     SELECT st.name AS source_type, m.source_id, h.inchikey
     FROM omnipath_utils.id_mapping m
     JOIN omnipath_utils.id_type st ON st.id = m.source_type_id
     JOIN pubchem_ik h ON h.hub = m.target_id
+    LEFT JOIN source_pattern sp ON sp.source_type = st.name
     WHERE m.target_type_id = (SELECT id FROM pc)
       AND st.name IN ('chembl', 'hmdb', 'chebi', 'drugbank')
+      AND (sp.pattern IS NULL OR m.source_id ~ sp.pattern)
 ),
 bridge_chebi AS (
     SELECT st.name AS source_type, m.source_id, h.inchikey
     FROM omnipath_utils.id_mapping m
     JOIN omnipath_utils.id_type st ON st.id = m.source_type_id
     JOIN chebi_ik h ON h.hub = m.target_id
+    LEFT JOIN source_pattern sp ON sp.source_type = st.name
     WHERE m.target_type_id = (SELECT id FROM ce)
       AND st.name IN ('kegg', 'hmdb')
+      AND (sp.pattern IS NULL OR m.source_id ~ sp.pattern)
+),
+-- pubchem_substance -> pubchem (CID) -> InChIKey (spec 011 T037). KEGG's
+-- own conv/pubchem cross-reference is a PubChem *substance* ID, not a
+-- compound ID (T032/T036) -- this is the bridge that lets a correctly
+-- tagged PUBCHEM_SUBSTANCE value still reach a structure.
+bridge_pubchem_substance AS (
+    SELECT st.name AS source_type, m.source_id, h.inchikey
+    FROM omnipath_utils.id_mapping m
+    JOIN omnipath_utils.id_type st ON st.id = m.source_type_id
+    JOIN pubchem_ik h ON h.hub = m.target_id
+    LEFT JOIN source_pattern sp ON sp.source_type = st.name
+    WHERE m.target_type_id = (SELECT id FROM pc)
+      AND st.name = 'pubchem_substance'
+      AND (sp.pattern IS NULL OR m.source_id ~ sp.pattern)
 )
+-- UNION (not UNION ALL): the same (source_type, source_id, inchikey) triple
+-- can reach this projection more than once -- from id_mapping's own
+-- redundancy, or because more than one contribution below resolves the
+-- identical pair (spec 011 T027/T034). Plain UNION folds every duplicate
+-- across all three branches in one pass. Malformed structure keys are also
+-- rejected here, not downstream -- ``InChIKey=none`` and similar
+-- placeholder values must never become a resolvable structure (spec.md US1
+-- acceptance scenario 4).
 SELECT source_type, source_id, inchikey FROM direct
-WHERE source_id IS NOT NULL AND inchikey IS NOT NULL
-UNION ALL
+WHERE source_id IS NOT NULL AND inchikey ~ '^[A-Z]{14}-[A-Z]{10}-[A-Z]$'
+UNION
 SELECT source_type, source_id, inchikey FROM bridge_pubchem
-WHERE source_id IS NOT NULL AND inchikey IS NOT NULL
-UNION ALL
+WHERE source_id IS NOT NULL AND inchikey ~ '^[A-Z]{14}-[A-Z]{10}-[A-Z]$'
+UNION
 SELECT source_type, source_id, inchikey FROM bridge_chebi
-WHERE source_id IS NOT NULL AND inchikey IS NOT NULL;
+WHERE source_id IS NOT NULL AND inchikey ~ '^[A-Z]{14}-[A-Z]{10}-[A-Z]$'
+UNION
+SELECT source_type, source_id, inchikey FROM bridge_pubchem_substance
+WHERE source_id IS NOT NULL AND inchikey ~ '^[A-Z]{14}-[A-Z]{10}-[A-Z]$';
 
 -- Keyed-lookup index: the build probes by (source_type, source_id).
 CREATE INDEX IF NOT EXISTS resolver_chemical_key_idx

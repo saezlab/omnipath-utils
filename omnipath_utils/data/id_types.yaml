@@ -548,6 +548,16 @@ pubchem:
     - pubchem_cid
     - pubchem_compound_id
 
+pubchem_substance:
+  label: PubChem Substance
+  entity_type: small_molecule
+  curie_prefix: pubchem.substance
+  backends:
+    pubchem: SID
+  aliases:
+    - pubchem_sid
+    - sid
+
 kegg:
   label: KEGG Compound
   entity_type: small_molecule
