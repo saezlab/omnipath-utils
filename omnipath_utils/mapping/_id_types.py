@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 import logging
+import re
 
 from pkg_infra.data import load
 
@@ -240,3 +242,117 @@ class IdTypeRegistry:
 
     def __repr__(self) -> str:
         return f'<IdTypeRegistry [{len(self)} types]>'
+
+
+# One canonical form per chemical namespace (spec 011 T024-T026). WP1's
+# resolver joins the translation database and the build's own evidence on
+# this normalized key. The two sides must derive the identical string from
+# every raw form a source actually publishes. That covers prefix presence
+# and case, and per-namespace padding or its absence. HMDB has 5- and
+# 7-digit accessions. KEGG zero-pads its compound number. PubChem's
+# canonical CID never carries leading zeros. One implementation, here, is
+# what keeps the two sides from silently drifting apart the way the
+# un-normalized key already did once.
+
+_VALUE_PATTERNS: dict[str, str] = {
+    'chebi': r'CHEBI:\d+',
+    'hmdb': r'HMDB\d{7}',
+    'swisslipids': r'SLM:\d+',
+    'lipidmaps': r'LM[A-Z0-9]+',
+    'kegg': r'C\d{5}',
+    'pubchem': r'[1-9]\d*|0',
+    'chembl': r'CHEMBL\d+',
+    'cas': r'\d{2,7}-\d{2}-\d',
+    'inchikey': r'[A-Z]{14}-[A-Z]{10}-[A-Z]',
+}
+
+
+def _normalize_chebi(value: str) -> str | None:
+    m = re.fullmatch(r'(?:chebi:)?\s*(\d+)', value.strip(), re.IGNORECASE)
+    return f'CHEBI:{m.group(1)}' if m else None
+
+
+def _normalize_hmdb(value: str) -> str | None:
+    m = re.fullmatch(r'hmdb(\d+)', value.strip(), re.IGNORECASE)
+    return f'HMDB{m.group(1).zfill(7)}' if m else None
+
+
+def _normalize_swisslipids(value: str) -> str | None:
+    m = re.fullmatch(r'(?:slm:)?\s*(\d+)', value.strip(), re.IGNORECASE)
+    return f'SLM:{m.group(1)}' if m else None
+
+
+def _normalize_lipidmaps(value: str) -> str | None:
+    v = value.strip()
+    return v.upper() if re.fullmatch(r'lm[a-z0-9]+', v, re.IGNORECASE) else None
+
+
+def _normalize_kegg(value: str) -> str | None:
+    m = re.fullmatch(r'c(\d+)', value.strip(), re.IGNORECASE)
+    return f'C{m.group(1).zfill(5)}' if m else None
+
+
+def _normalize_pubchem(value: str) -> str | None:
+    m = re.fullmatch(r'0*(\d+)', value.strip())
+    return m.group(1) if m else None
+
+
+def _normalize_chembl(value: str) -> str | None:
+    v = value.strip().replace(' ', '')
+    m = re.fullmatch(r'chembl(\d+)', v, re.IGNORECASE)
+    return f'CHEMBL{m.group(1)}' if m else None
+
+
+def _normalize_cas(value: str) -> str | None:
+    v = value.strip()
+    return v if re.fullmatch(r'\d{2,7}-\d{2}-\d', v) else None
+
+
+def _normalize_inchikey(value: str) -> str | None:
+    m = re.fullmatch(
+        r'(?:inchikey=)?([a-z]{14}-[a-z]{10}-[a-z])', value.strip(), re.IGNORECASE,
+    )
+    return m.group(1).upper() if m else None
+
+
+_NORMALIZERS: dict[str, Callable[[str], str | None]] = {
+    'chebi': _normalize_chebi,
+    'hmdb': _normalize_hmdb,
+    'swisslipids': _normalize_swisslipids,
+    'lipidmaps': _normalize_lipidmaps,
+    'kegg': _normalize_kegg,
+    'pubchem': _normalize_pubchem,
+    'chembl': _normalize_chembl,
+    'cas': _normalize_cas,
+    'inchikey': _normalize_inchikey,
+}
+
+
+def normalize_identifier(id_type: str, value: str | None) -> str | None:
+    """The one normalized form of ``value`` for the chemical namespace
+    ``id_type``. Every consumer, on both sides of the join, calls this
+    instead of writing its own prefix/case/padding rule.
+
+    Returns ``None`` for an unregistered namespace, an empty value, or a
+    value that does not match that namespace's raw form at all.
+    """
+
+    if not value:
+        return None
+
+    canonical = IdTypeRegistry.get().resolve(id_type) or id_type
+    normalizer = _NORMALIZERS.get(canonical)
+
+    return normalizer(value) if normalizer else None
+
+
+def value_pattern(id_type: str) -> str | None:
+    """The regular expression a namespace's *normalized* form must match.
+
+    Distinct from :meth:`IdTypeRegistry.id_pattern`, which validates a raw,
+    pre-normalization value when the registry declares one.
+    """
+
+    canonical = IdTypeRegistry.get().resolve(id_type) or id_type
+
+    return _VALUE_PATTERNS.get(canonical)
