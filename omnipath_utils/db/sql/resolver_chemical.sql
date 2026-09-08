@@ -25,7 +25,12 @@ CREATE SCHEMA IF NOT EXISTS omnipath_utils;
 -- resolver for CID endpoints). Materialise + index so the read is a sequential
 -- table scan and keyed lookups (by source_type, source_id) are index probes.
 -- Rebuilt on reload alongside resolver_gene (create_resolver_views). Drop whichever
--- relkind exists (IF EXISTS does not cover a view<->matview mismatch).
+-- relkind exists (IF EXISTS does not cover a view<->matview mismatch). Also
+-- covers a plain TABLE (T035 aftermath): a rebuild too slow to run inside
+-- Postgres itself can populate this relation via DuckDB instead (ATTACH,
+-- compute, write back), landing it as an ordinary table one step before the
+-- final CREATE MATERIALIZED VIEW below -- an interrupted run of that path
+-- must not leave a table this DO block silently ignores.
 DO $$
 DECLARE k "char";
 BEGIN
@@ -34,6 +39,7 @@ BEGIN
    WHERE n.nspname = 'omnipath_utils' AND c.relname = 'resolver_chemical';
   IF k = 'v' THEN EXECUTE 'DROP VIEW omnipath_utils.resolver_chemical CASCADE';
   ELSIF k = 'm' THEN EXECUTE 'DROP MATERIALIZED VIEW omnipath_utils.resolver_chemical CASCADE';
+  ELSIF k = 'r' THEN EXECUTE 'DROP TABLE omnipath_utils.resolver_chemical CASCADE';
   END IF;
 END $$;
 CREATE MATERIALIZED VIEW omnipath_utils.resolver_chemical AS
