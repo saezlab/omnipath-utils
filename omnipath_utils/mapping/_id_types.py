@@ -348,6 +348,19 @@ def normalize_identifier(id_type: str, value: str | None) -> str | None:
     return normalizer(value) if normalizer else None
 
 
+def normalize_name(value: str) -> str:
+    """The one normalized form of a chemical name or synonym (spec 011 R5).
+
+    Case- and whitespace-folded so the same molecule under different
+    capitalization or incidental spacing collapses to one lookup key.
+    Every writer into ``id_mapping_long`` and every reader of it (the
+    'name' axis in :mod:`omnipath_utils.db._query`) calls this instead of
+    writing its own ``.strip().lower()``.
+    """
+
+    return str(value).strip().lower()
+
+
 def value_pattern(id_type: str) -> str | None:
     """The regular expression a namespace's *normalized* form must match.
 

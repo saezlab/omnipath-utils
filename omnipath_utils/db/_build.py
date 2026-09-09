@@ -2152,7 +2152,9 @@ class DatabaseBuilder:
         for source_id, target_ids in data.items():
             raw = str(source_id).strip()
             if is_name:
-                key, label = raw.lower(), raw
+                from omnipath_utils.mapping._id_types import normalize_name
+
+                key, label = normalize_name(raw), raw
             else:
                 key, label = raw, None
             if not key or len(key.encode('utf-8')) > max_key:

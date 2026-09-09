@@ -120,7 +120,9 @@ def _lookup_key(source_type: str, identifier: str) -> str:
     digit-padded).
     """
     if source_type in NAME_TYPES:
-        return str(identifier).strip().lower()
+        from omnipath_utils.mapping._id_types import normalize_name
+
+        return normalize_name(identifier)
     if source_type in STRUCTURE_TYPES:
         return str(identifier).strip()
     s = strip_curie(source_type, identifier)
