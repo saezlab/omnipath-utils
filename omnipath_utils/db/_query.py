@@ -117,12 +117,22 @@ def _lookup_key(source_type: str, identifier: str) -> str:
     """The normalised storage key for one query identifier.
 
     Names lowercased, structures verbatim, database IDs CURIE-stripped (+ HMDB
-    digit-padded).
+    digit-padded), InChIKey case- and prefix-normalised.
     """
     if source_type in NAME_TYPES:
         from omnipath_utils.mapping._id_types import normalize_name
 
         return normalize_name(identifier)
+    if source_type == 'inchikey':
+        # C8: InChIKey's own prefix convention is 'InChIKey=' (an '=', not
+        # a ':') -- strip_curie's colon-only split never catches it, so this
+        # goes through the real per-namespace normalizer instead. Falls back
+        # to a plain strip+uppercase for a value that doesn't fully match
+        # (e.g. malformed input) rather than dropping the query outright.
+        from omnipath_utils.mapping._id_types import normalize_identifier
+
+        normalized = normalize_identifier('inchikey', identifier)
+        return normalized if normalized else str(identifier).strip().upper()
     if source_type in STRUCTURE_TYPES:
         return str(identifier).strip()
     s = strip_curie(source_type, identifier)

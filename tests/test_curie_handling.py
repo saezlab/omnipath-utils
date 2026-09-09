@@ -46,6 +46,24 @@ class TestLookupKey:
     def test_chebi_curie_normalised(self):
         assert q._lookup_key('chebi', 'chebi:17612') == 'CHEBI:17612'
 
+    def test_inchikey_prefixed_lowercase_normalised(self):
+        # C8: a prefixed, lower-case structure key translates. InChIKey's own
+        # convention uses '=' (InChIKey=...), which strip_curie's ':'-only
+        # split never catches -- this must go through the real normalizer.
+        key = 'lfqscwfljhtthz-uhfffaoysa-n'
+        assert q._lookup_key('inchikey', f'InChIKey={key}') == key.upper()
+        assert q._lookup_key('inchikey', f'inchikey={key}') == key.upper()
+
+    def test_inchikey_bare_lowercase_uppercased(self):
+        assert q._lookup_key(
+            'inchikey', 'lfqscwfljhtthz-uhfffaoysa-n',
+        ) == 'LFQSCWFLJHTTHZ-UHFFFAOYSA-N'
+
+    def test_inchikey_bare_uppercase_unchanged(self):
+        assert q._lookup_key(
+            'inchikey', 'LFQSCWFLJHTTHZ-UHFFFAOYSA-N',
+        ) == 'LFQSCWFLJHTTHZ-UHFFFAOYSA-N'
+
 
 class TestTranslateCurie:
     def test_chebi_curie_variants_resolve_and_rekey(self, monkeypatch):
