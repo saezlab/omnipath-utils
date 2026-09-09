@@ -2182,6 +2182,47 @@ class DatabaseBuilder:
             return 'structure'
         return 'id'
 
+    @staticmethod
+    def _canonicalize_smiles_in_data(
+        data: dict[str, set[str]], source_type: str, target_type: str,
+    ) -> dict[str, set[str]]:
+        """Replace a raw SMILES key/value with its canonical form (T079),
+        so the stored lookup key matches what ``_lookup_key`` computes for
+        an incoming query (T080) -- two spellings of one molecule become
+        one stored row instead of two unmatched ones.
+
+        Runs *before* ``_long_rows``, which stays byte-verbatim for
+        structures (its own deliberate, tested contract -- naive folding
+        would corrupt SMILES case-sensitivity). Chemistry-aware
+        canonicalization is a different transform at a different layer,
+        not a relaxation of that contract. A value that fails to
+        canonicalize (garbage, or the toolkit unavailable) keeps its raw
+        form -- degrades to a byte comparison rather than dropping the row
+        (research R14).
+        """
+        if source_type != 'smiles' and target_type != 'smiles':
+            return data
+
+        from omnipath_utils.mapping._chemistry import (
+            canonicalize_smiles,
+            chemistry_available,
+        )
+
+        if not chemistry_available():
+            return data
+
+        canon_src = source_type == 'smiles'
+        canon_tgt = target_type == 'smiles'
+        out: dict[str, set[str]] = {}
+        for src, targets in data.items():
+            new_src = (canonicalize_smiles(src) or src) if canon_src else src
+            new_targets = {
+                (canonicalize_smiles(t) or t) if canon_tgt else t
+                for t in targets
+            }
+            out.setdefault(new_src, set()).update(new_targets)
+        return out
+
     def _populate_long_slice(
         self,
         data: dict,
@@ -2232,6 +2273,7 @@ class DatabaseBuilder:
             )
             session.commit()
 
+        data = self._canonicalize_smiles_in_data(data, source_type, target_type)
         rows, skipped = self._long_rows(
             data, src_type_id, tgt_type_id, backend_id, is_name,
             self._MAX_LONG_KEY, limit,
