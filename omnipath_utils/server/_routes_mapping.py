@@ -178,6 +178,27 @@ def _apply_fallbacks(
     return result
 
 
+#: FR-021: a preferred-name match ranks above a synonym match, and — within
+#: the same bucket — a name mapping to one structure ranks above one mapping
+#: to several. ``name_scope=any`` is documented as unranked (contracts/
+#: translation-api.md), so this ordering applies to every other scope.
+_NAME_BUCKET_RANK = {'preferred': 0, 'synonym': 1}
+
+
+def _rank_name_matches(
+    mapped: dict[str, list[str]], matched_as: dict[str, str],
+) -> dict[str, list[str]]:
+    ranked_keys = sorted(
+        mapped,
+        key=lambda k: (
+            _NAME_BUCKET_RANK.get(matched_as.get(k, 'synonym'), 1),
+            len(mapped[k]),
+            k,
+        ),
+    )
+    return {k: mapped[k] for k in ranked_keys}
+
+
 def _build_translate_response(
     id_list: list[str],
     result: dict[str, set[str]],
@@ -189,10 +210,14 @@ def _build_translate_response(
     backend: str | None,
     loading: bool,
     recovery: dict | None = None,
+    name_scope: str | None = None,
+    matched_as: dict | None = None,
 ) -> dict:
     """Build the response dict for translate endpoints."""
 
     mapped = {k: sorted(v) for k, v in result.items() if v}
+    if matched_as and name_scope != 'any':
+        mapped = _rank_name_matches(mapped, matched_as)
     unmapped = [i for i in id_list if i not in result or not result[i]]
 
     meta = {
@@ -205,6 +230,12 @@ def _build_translate_response(
         'backend': sorted(backends_used) if backends_used else backend,
         'loading': loading,
     }
+
+    if name_scope is not None:
+        meta['name_scope'] = name_scope
+        meta['matched_as'] = {
+            k: v for k, v in (matched_as or {}).items() if k in mapped
+        }
 
     if loading:
         meta['loading_note'] = (
@@ -295,6 +326,16 @@ class MappingController(Controller):
                 "unresolved IDs), 'never', 'both', 'only'."
             ),
         ),
+        name_scope: str = Parameter(
+            default='default',
+            required=False,
+            description=(
+                "Only consulted when id_type or target_id_type is 'name': "
+                "'default' (preferred names, then synonyms, when "
+                "translating from a name; preferred only when translating "
+                "to one), 'preferred', 'synonym' or 'any'."
+            ),
+        ),
     ) -> dict:
         """Translate identifiers from one type to another.
 
@@ -306,6 +347,7 @@ class MappingController(Controller):
             raw: Skip special-case handling.
             backend: Force specific backend (ignored for DB mode).
             full_uniprot: How to use the comprehensive full-UniProt table.
+            name_scope: Restrict a 'name'-axis query to a name bucket.
         """
 
         from omnipath_utils.mapping._id_types import IdTypeRegistry
@@ -313,12 +355,14 @@ class MappingController(Controller):
         reg = IdTypeRegistry.get()
         id_type_resolved = reg.resolve(id_type) or id_type
         target_resolved = reg.resolve(target_id_type) or target_id_type
+        is_name_axis = 'name' in (id_type_resolved, target_resolved)
 
         id_list = [i.strip() for i in identifiers.split(',') if i.strip()]
 
         # US2: deprecated-ID recovery is a default API fallback (recover=True),
         # consulted only for ids the primary route misses; raw mode stays literal.
         recovery: dict = {}
+        matched_as: dict = {}
         result, backends_used = translate_ids(
             session,
             id_list,
@@ -328,10 +372,14 @@ class MappingController(Controller):
             full_uniprot=full_uniprot,
             recover=not raw,
             recovery_meta=recovery,
+            name_scope=name_scope,
+            name_meta=matched_as,
         )
 
-        # If no results from DB, trigger background load
-        loading = _maybe_trigger_load(
+        # A name-axis miss is never queued for on-demand loading -- the
+        # public service performs none, and reports an honest miss instead
+        # of a retry note (FR: "Honest misses").
+        loading = False if is_name_axis else _maybe_trigger_load(
             result,
             raw,
             id_type_resolved,
@@ -367,6 +415,8 @@ class MappingController(Controller):
             backend,
             loading,
             recovery=recovery,
+            name_scope=name_scope if is_name_axis else None,
+            matched_as=matched_as if is_name_axis else None,
         )
 
     @post('/translate')
@@ -386,6 +436,8 @@ class MappingController(Controller):
             backend: Force specific backend (default: null).
             full_uniprot: Use of the comprehensive full-UniProt table
                 ('fallback' (default), 'never', 'both', 'only').
+            name_scope: Restrict a 'name'-axis query to a name bucket
+                ('default' (default), 'preferred', 'synonym', 'any').
         """
 
         from omnipath_utils.mapping._id_types import IdTypeRegistry
@@ -399,11 +451,14 @@ class MappingController(Controller):
         raw = data.get('raw', False)
         backend = data.get('backend', None)
         full_uniprot = data.get('full_uniprot', 'fallback')
+        name_scope = data.get('name_scope', 'default')
 
         id_type_resolved = reg.resolve(id_type) or id_type
         target_resolved = reg.resolve(target_id_type) or target_id_type
+        is_name_axis = 'name' in (id_type_resolved, target_resolved)
 
         recovery: dict = {}
+        matched_as: dict = {}
         result, backends_used = translate_ids(
             session,
             id_list,
@@ -413,10 +468,11 @@ class MappingController(Controller):
             full_uniprot=full_uniprot,
             recover=not raw,
             recovery_meta=recovery,
+            name_scope=name_scope,
+            name_meta=matched_as,
         )
 
-        # If no results from DB, trigger background load
-        loading = _maybe_trigger_load(
+        loading = False if is_name_axis else _maybe_trigger_load(
             result,
             raw,
             id_type_resolved,
@@ -452,6 +508,8 @@ class MappingController(Controller):
             backend,
             loading,
             recovery=recovery,
+            name_scope=name_scope if is_name_axis else None,
+            matched_as=matched_as if is_name_axis else None,
         )
 
     @get('/identify')

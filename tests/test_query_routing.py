@@ -30,11 +30,15 @@ def spy(monkeypatch):
 
 class TestLongRouting:
     def test_name_to_chebi_reads_long_lowercased(self, spy):
+        # spec 011 FR-017: 'name' is the generic axis -- preferred first (one
+        # call), falling back to the synonym/iupac/traditional_iupac bucket
+        # (three more) since the spy answers nothing.
         q.translate_ids(MagicMock(), ['Taurine'], 'name', 'chebi', 9606)
-        assert len(spy) == 1
-        assert spy[0]['table'].endswith('id_mapping_long')
-        assert spy[0]['ids'] == ['taurine']      # lowercased (FR-002)
-        assert spy[0]['tax'] == 0                 # organism-agnostic
+        assert len(spy) == 4
+        assert all(c['table'].endswith('id_mapping_long') for c in spy)
+        assert all(c['ids'] == ['taurine'] for c in spy)  # lowercased (FR-002)
+        assert all(c['tax'] == 0 for c in spy)  # organism-agnostic
+        assert spy[0]['src'] == 'name'  # the preferred bucket is tried first
 
     def test_synonym_to_chebi_reads_long(self, spy):
         q.translate_ids(MagicMock(), ['ATP'], 'synonym', 'chebi', 9606)

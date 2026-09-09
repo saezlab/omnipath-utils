@@ -290,6 +290,89 @@ def _query_table(
 
 
 # ---------------------------------------------------------------------------
+# The generic 'name' axis (spec 011 FR-016..021): 'name', 'synonym', 'iupac'
+# and 'traditional_iupac' stop being unrelated types the caller must each try
+# in turn, and become one graded lookup. A name is what the minting resource
+# recommends; every other name-like value it records -- including a
+# systematic IUPAC name -- is a synonym for this purpose (FR-016).
+# ---------------------------------------------------------------------------
+
+_NAME_PREFERRED_TYPES: frozenset[str] = frozenset({'name'})
+_NAME_SYNONYM_TYPES: frozenset[str] = frozenset(
+    {'synonym', 'iupac', 'traditional_iupac'}
+)
+
+
+def _name_axis_buckets(
+    name_scope: str, forward: bool,
+) -> list[tuple[str, frozenset[str]]]:
+    """The ordered (label, real id_types) buckets to consult for one query.
+
+    ``forward`` is True when the 'name' side is the *source* (translating
+    FROM a name, FR-017: preferred first, fall back to synonyms); False when
+    it is the *target* (translating TO a name, FR-018: preferred only by
+    default, no fallback).
+    """
+    if name_scope == 'preferred':
+        return [('preferred', _NAME_PREFERRED_TYPES)]
+    if name_scope == 'synonym':
+        return [('synonym', _NAME_SYNONYM_TYPES)]
+    if name_scope == 'any':
+        return [('any', _NAME_PREFERRED_TYPES | _NAME_SYNONYM_TYPES)]
+    if forward:
+        return [
+            ('preferred', _NAME_PREFERRED_TYPES),
+            ('synonym', _NAME_SYNONYM_TYPES),
+        ]
+    return [('preferred', _NAME_PREFERRED_TYPES)]
+
+
+def _query_name_axis(
+    session: Session,
+    table: str,
+    identifiers: list[str] | None,
+    forward: bool,
+    other_type: str,
+    ncbi_tax_id: int,
+    name_scope: str,
+) -> tuple[defaultdict[str, set[str]], set[str], dict[str, str]]:
+    """Query the generic 'name' axis: union name/synonym/iupac/traditional_iupac,
+    honoring ``name_scope``, and report which bucket answered each identifier.
+
+    Each real type is queried through :func:`_query_table` (one call per
+    type), reusing its existing forward + reverse-for-missing lookup rather
+    than reimplementing it -- a name-like type is stored in only one
+    direction for most cross-referenced ids (R3), and the reverse fallback is
+    what makes those still answer.
+    """
+    result: defaultdict[str, set[str]] = defaultdict(set)
+    matched_as: dict[str, str] = {}
+    backends_used: set[str] = set()
+    remaining = identifiers
+
+    for bucket_label, types in _name_axis_buckets(name_scope, forward):
+        if remaining is not None and not remaining:
+            break
+        for real_type in sorted(types):
+            src_type, tgt_type = (
+                (real_type, other_type) if forward else (other_type, real_type)
+            )
+            rows, backends = _query_table(
+                session, table, remaining, src_type, tgt_type, ncbi_tax_id,
+            )
+            for ident, targets in rows.items():
+                if not targets:
+                    continue
+                result[ident] |= targets
+                matched_as.setdefault(ident, bucket_label)
+            backends_used |= backends
+        if remaining is not None:
+            remaining = [i for i in remaining if i not in result]
+
+    return result, backends_used, matched_as
+
+
+# ---------------------------------------------------------------------------
 # Deprecated / aged-ID recovery (007 US2, FR-006..009). A post-primary fallback:
 # only still-unmapped ids of a recoverable source_type consult the recovery tables,
 # so the valid-id common path is untouched (FR-007).
@@ -428,6 +511,8 @@ def translate_ids(
     full_uniprot: str = 'fallback',
     recover: bool = False,
     recovery_meta: dict | None = None,
+    name_scope: str = 'default',
+    name_meta: dict | None = None,
 ) -> tuple[dict[str, set[str]], set[str]]:
     """Translate IDs via the database.
 
@@ -447,6 +532,14 @@ def translate_ids(
             The full table is only consulted on explicit request
             (``both``/``only``) for a whole-table query, never as a blanket
             fallback.
+        name_scope: Only consulted when ``source_type`` or ``target_type`` is
+            the generic ``'name'`` axis (FR-016..018): ``'default'``
+            (preferred first, fall back to synonyms when translating from a
+            name; preferred only when translating to one), ``'preferred'``,
+            ``'synonym'`` or ``'any'``.
+        name_meta: When given and the name axis is queried, populated with
+            ``{original_identifier: 'preferred' | 'synonym' | 'any'}`` naming
+            the bucket that answered each input (FR-020's ``matched_as``).
 
     Returns:
         Tuple of (results dict, set of backend names used).
@@ -459,6 +552,24 @@ def translate_ids(
         [_lookup_key(source_type, i) for i in identifiers]
         if identifiers is not None else None
     )
+
+    # The generic 'name' axis (FR-016..018): union name/synonym/iupac/
+    # traditional_iupac behind one lookup instead of four unrelated types.
+    if source_type == 'name' or target_type == 'name':
+        forward = source_type == 'name'
+        other_type = target_type if forward else source_type
+        # Chemicals are organism-agnostic (rows at tax 0), matching the
+        # plain long-value path below.
+        result, backends_used, matched_as = _query_name_axis(
+            session, f'{SCHEMA}.{_LONG_TABLE}', norm_ids, forward,
+            other_type, 0, name_scope,
+        )
+        if name_meta is not None:
+            for orig in identifiers or []:
+                bucket = matched_as.get(_lookup_key(source_type, orig))
+                if bucket:
+                    name_meta[orig] = bucket
+        return _rekey(result, identifiers, source_type), backends_used
 
     # Long-value (name / structure) queries route to the separate
     # ``id_mapping_long`` table (R2). Chemicals are organism-agnostic (rows at
