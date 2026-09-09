@@ -205,6 +205,22 @@ class BuildInfo(Base):
     )
 
 
+class NamespaceExemption(Base):
+    """A namespace the build declares but deliberately does not (fully) load
+    (spec 011 R7/T093): "the exemption is data, not silence" -- one reviewed
+    row per exempted namespace, never a silent zero-rows gap.
+    """
+
+    __tablename__ = 'namespace_exemption'
+    __table_args__ = {'schema': 'omnipath_utils'}
+
+    namespace: Mapped[str] = mapped_column(String(64), primary_key=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    reviewed_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Orthology(Base):
     __tablename__ = 'orthology'
     __table_args__ = (

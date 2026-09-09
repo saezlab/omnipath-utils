@@ -858,6 +858,14 @@ recon3d:
   aliases:
     - recon3d_id
 
+reactome:
+  label: Reactome
+  entity_type: small_molecule
+  backends:
+    reactome: pathway_id
+  aliases:
+    - reactome_stable_id
+
 metanetx:
   label: MetaNetX
   entity_type: small_molecule

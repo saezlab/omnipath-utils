@@ -123,7 +123,7 @@ def rebuild(pg_url: str) -> int:
         JOIN id_type_local ce ON ce.id = m.target_type_id AND ce.name = 'chebi'
         JOIN chebi_ik h ON h.hub = m.target_id
         LEFT JOIN source_pattern sp ON sp.source_type = st.name
-        WHERE st.name IN ('kegg', 'hmdb')
+        WHERE st.name IN ('kegg', 'hmdb', 'reactome')
           AND m.source_id IS NOT NULL
           AND regexp_matches(h.inchikey, '{_INCHIKEY_PATTERN}')
           AND (sp.pattern IS NULL OR regexp_matches(m.source_id, sp.pattern))

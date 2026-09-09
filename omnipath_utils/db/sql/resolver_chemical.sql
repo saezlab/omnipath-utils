@@ -99,7 +99,9 @@ bridge_chebi AS (
     JOIN chebi_ik h ON h.hub = m.target_id
     LEFT JOIN source_pattern sp ON sp.source_type = st.name
     WHERE m.target_type_id = (SELECT id FROM ce)
-      AND st.name IN ('kegg', 'hmdb')
+      -- T089/T092: reactome (chebi<->reactome, Reactome's own cross-
+      -- reference file) has the same shape as kegg/hmdb's own chebi hub.
+      AND st.name IN ('kegg', 'hmdb', 'reactome')
       AND (sp.pattern IS NULL OR m.source_id ~ sp.pattern)
 ),
 -- pubchem_substance -> pubchem (CID) -> InChIKey (spec 011 T037). KEGG's

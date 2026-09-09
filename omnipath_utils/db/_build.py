@@ -9,7 +9,9 @@ import logging
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from omnipath_utils.db._schema import Base, IdType, Backend, Organism, BuildInfo
+from omnipath_utils.db._schema import (
+    Base, IdType, Backend, Organism, BuildInfo, NamespaceExemption,
+)
 from omnipath_utils.db._connection import SCHEMA, get_engine, ensure_schema
 from omnipath_utils.mapping._id_types import IdTypeRegistry, normalize_identifier
 from omnipath_utils.taxonomy._taxonomy import TaxonomyManager
@@ -144,6 +146,9 @@ class DatabaseBuilder:
             'kegg_gene',
             'metanetx',
             'bigg',
+            'refmet',
+            'reactome',
+            'recon3d',
             # Structure-bearing backends (inputs_v2 adapter + PubChem)
             'chebi',
             'chembl',
@@ -161,6 +166,170 @@ class DatabaseBuilder:
             session.commit()
 
         _log.info('Populated %d backends', len(backends))
+
+    #: Namespaces the build declares (id_types.yaml) but deliberately does
+    #: not load, reviewed 2026-09-09 (spec 011 R7/T093 -- "the exemption is
+    #: data, not silence").
+    _NAMESPACE_EXEMPTIONS: dict[str, str] = {
+        'kegg_glycan': (
+            'id_types.yaml declares this reachable via ramp, but RaMP\'s '
+            'auto-discovered compound ID types (_populate_ramp) do not '
+            'currently include a kegg_glycan entry.'
+        ),
+        'lipidbank': (
+            'id_types.yaml declares this reachable via ramp, but RaMP\'s '
+            'auto-discovered compound ID types do not currently include a '
+            'lipidbank entry.'
+        ),
+        'plantfa': (
+            'id_types.yaml declares this reachable via ramp, but RaMP\'s '
+            'auto-discovered compound ID types do not currently include a '
+            'plantfa entry.'
+        ),
+        'polymer': (
+            'id_types.yaml declares this reachable via ramp, but RaMP\'s '
+            'auto-discovered compound ID types do not currently include a '
+            'polymer entry.'
+        ),
+        'phenol_explorer': (
+            'No pypath loader exists; id_types.yaml declares it reachable '
+            'via hmdb, but HMDB\'s raw metabolite records carry no '
+            'phenol_explorer cross-reference field.'
+        ),
+        'wikipedia': (
+            'No pypath loader exists; id_types.yaml declares it reachable '
+            'via hmdb, but HMDB\'s raw metabolite records carry no '
+            'wikipedia cross-reference field.'
+        ),
+        'biocyc': (
+            'No pypath loader exists; id_types.yaml declares it reachable '
+            'via hmdb, but HMDB\'s raw metabolite records carry no biocyc '
+            'cross-reference field.'
+        ),
+        'fbonto': (
+            'No pypath loader exists; id_types.yaml declares it reachable '
+            'via hmdb, but HMDB\'s raw metabolite records carry no fbonto '
+            'cross-reference field.'
+        ),
+        'ehmn': (
+            'No pypath loader exists for chalmers_gem (the Human-GEM-style '
+            'genome-scale metabolic model id_types.yaml declares this '
+            'reachable through) at all -- no inputs_v2 or legacy inputs '
+            'module.'
+        ),
+        'hepatonet': (
+            'No pypath loader exists for chalmers_gem (see ehmn -- same '
+            'root cause, same missing backend).'
+        ),
+        'hmr2': (
+            'No pypath loader exists for chalmers_gem (see ehmn -- same '
+            'root cause, same missing backend).'
+        ),
+        'metabolicatlas': (
+            'No pypath loader exists for chalmers_gem (see ehmn -- same '
+            'root cause, same missing backend).'
+        ),
+        'metabolicatlas_comp': (
+            'No pypath loader exists for chalmers_gem (see ehmn -- same '
+            'root cause, same missing backend).'
+        ),
+        'knapsack': (
+            'No pypath loader exists (no inputs_v2 or legacy inputs module); '
+            'id_types.yaml declares it reachable via hmdb, but HMDB\'s raw '
+            'metabolite records carry no knapsack cross-reference field.'
+        ),
+        'chemspider': (
+            'No pypath loader exists; id_types.yaml declares it reachable '
+            'via hmdb, but HMDB\'s raw metabolite records carry no '
+            'chemspider cross-reference field.'
+        ),
+        'metlin': (
+            'No pypath loader exists; id_types.yaml declares it reachable '
+            'via hmdb, but HMDB\'s raw metabolite records carry no metlin '
+            'cross-reference field.'
+        ),
+        'vmh': (
+            'No dedicated pypath loader; Recon3D (hosted on VMH\'s own '
+            'site) does not carry a distinct VMH accession field in its '
+            'own schema, only bigg_metabolite_id/hmdb/chebi/kegg_compound/'
+            'metanetx.'
+        ),
+        'wikidata': (
+            'No pypath loader exists; id_types.yaml declares it reachable '
+            'via ramp, but RaMP\'s auto-discovered compound ID types do '
+            'not currently include a wikidata entry.'
+        ),
+        'recon3d': (
+            'pypath.inputs_v2.recon3d has a working schema (name/'
+            'bigg_metabolite_id/hmdb/chebi/kegg_compound/metanetx), but '
+            'its custom JSON raw_parser (data_type dispatch over the BiGG '
+            'Models JSON export) returns zero rows through the generic '
+            'inputs_v2 adapter raw_rows() this build uses for every other '
+            'CSV-based source -- needs a dedicated reader, not a data gap.'
+        ),
+        'rhea': (
+            'UniChem\'s Rhea source and RaMP\'s rhea-comp type both return '
+            'the reaction participant\'s ChEBI id as the "Rhea id" -- Rhea '
+            'mints no compound identifier of its own, participants are '
+            'cited by ChEBI id directly. Excluded from both auto-discovery '
+            'loops (T091) rather than stored as a wrong value.'
+        ),
+        'pdbe': (
+            'UniChem\'s PDBe source returns a display label plus conformer '
+            'type (e.g. "GR2 - Ideal conformer") as the "PDBe id", not the '
+            'ligand code. Excluded from UniChem auto-discovery (T091) '
+            'rather than stored as a wrong value; PDBe\'s own ligand '
+            'dictionary would be the correct source for a real loader.'
+        ),
+    }
+
+    def populate_namespace_exemptions(self):
+        """Record every reviewed exemption (spec 011 T093), upserting the
+        reason so a re-run picks up a changed one.
+        """
+        with Session(self.engine) as session:
+            for namespace, reason in self._NAMESPACE_EXEMPTIONS.items():
+                existing = (
+                    session.query(NamespaceExemption)
+                    .filter_by(namespace=namespace)
+                    .first()
+                )
+                if existing:
+                    existing.reason = reason
+                else:
+                    session.add(
+                        NamespaceExemption(namespace=namespace, reason=reason)
+                    )
+            session.commit()
+        _log.info(
+            'Recorded %d namespace exemptions', len(self._NAMESPACE_EXEMPTIONS)
+        )
+
+    def _clear_wrong_content_rows(self):
+        """Delete the id_mapping rows T091 found were storing the wrong
+        thing (rhea holding ChEBI values, pdbe holding descriptive text) --
+        the code fix (``_UNICHEM_WRONG_CONTENT``) stops new wrong rows from
+        being written; this removes what a prior run already wrote.
+        """
+        with Session(self.engine) as session:
+            for namespace in ('rhea', 'pdbe'):
+                id_type = (
+                    session.query(IdType).filter_by(name=namespace).first()
+                )
+                if not id_type:
+                    continue
+                deleted = session.execute(
+                    text(
+                        f'DELETE FROM {SCHEMA}.id_mapping'
+                        ' WHERE source_type_id = :t OR target_type_id = :t'
+                    ),
+                    {'t': id_type.id},
+                ).rowcount
+                _log.info(
+                    'Cleared %d wrong-content id_mapping rows for %s',
+                    deleted, namespace,
+                )
+            session.commit()
 
     def populate_organisms(self):
         """Populate organism table from all available sources."""
@@ -2114,8 +2283,11 @@ class DatabaseBuilder:
         self._populate_ramp()
         self._populate_metanetx()
         self._populate_bigg()
+        self._populate_reactome()
+        self._clear_wrong_content_rows()
         self._populate_structures()
         self._populate_chemical_long()
+        self.populate_namespace_exemptions()
         self.record_structure_key_capability()
 
     # ------------------------------------------------------------------
@@ -2346,6 +2518,7 @@ class DatabaseBuilder:
             ('chembl', self._long_chembl),
             ('kegg_compound', self._long_kegg),
             ('ramp', self._long_ramp),
+            ('refmet', self._long_refmet),
         ]
         for label, fn in builders:
             try:
@@ -2450,11 +2623,23 @@ class DatabaseBuilder:
         """HMDB names/synonyms <-> hmdb + xref ids + structures. US1 (T016).
 
         HMDB carries the richest per-metabolite cross-reference block in the
-        field: ChEBI, KEGG, PubChem, DrugBank and FooDB, each on the same
-        record. The project mirrors the archive on its own host
+        field: ChEBI, KEGG, PubChem, DrugBank, FooDB and CAS, each on the
+        same record, plus its own IUPAC name and traditional IUPAC name. The
+        project mirrors the archive on its own host
         (``pypath.inputs_v2.hmdb``). This reads it directly, unlike the
         legacy ``pypath.inputs.hmdb`` path, which reached only a narrow
         synonym-to-ChEBI slice and needed HMDB's site to stay up.
+
+        T087 (spec 011): ``id_types.yaml`` also declares HMDB a backend for
+        knapsack/chemspider/metlin/vmh/wikidata/biocyc/fbonto/
+        phenol_explorer/molport/wikipedia -- verified against a live raw
+        row that none of those fields actually exist in HMDB's parsed
+        schema (confirmed columns: accession, cas_registry_number,
+        chebi_id, drugbank_id, foodb_id, inchi, inchikey, iupac_name,
+        kegg_id, name, pubchem_compound_id, smiles, synonyms,
+        traditional_iupac -- nothing else namespace-shaped). Those ten
+        namespaces are declared but HMDB does not, in fact, reach them --
+        recorded as exemptions (T093), not silently dropped.
         """
         from omnipath_utils.mapping.backends._inputs_v2_adapter import raw_rows
 
@@ -2465,11 +2650,14 @@ class DatabaseBuilder:
                 row['synonyms'] = [s for s in synonyms.split(';') if s]
         n = self._emit_long_relations(
             rows, 'hmdb',
-            name_cols={'name': 'name', 'synonym': 'synonyms'},
+            name_cols={
+                'name': 'name', 'synonym': 'synonyms',
+                'iupac': 'iupac_name', 'traditional_iupac': 'traditional_iupac',
+            },
             id_cols={
                 'hmdb': 'accession', 'chebi': 'chebi_id', 'kegg': 'kegg_id',
                 'pubchem': 'pubchem_compound_id', 'drugbank': 'drugbank_id',
-                'foodb': 'foodb_id',
+                'foodb': 'foodb_id', 'cas': 'cas_registry_number',
             },
             struct_cols={'inchi': 'inchi', 'smiles': 'smiles'},
         )
@@ -2490,6 +2678,33 @@ class DatabaseBuilder:
             struct_cols={'inchi': 'standard_inchi', 'smiles': 'canonical_smiles'},
         )
         _log.info('chemical_long chembl: %d rows', n)
+
+    def _long_refmet(self):
+        """RefMet names <-> refmet/chebi/hmdb/kegg/lipidmaps/pubchem ids.
+
+        US5 (T088). 169,859 chemical entities canonicalize on a RefMet name
+        with no RefMet row in the translation database at all before this
+        (research.md R7). RefMet carries no full InChI/SMILES of its own
+        (only an InChIKey, which belongs in id_mapping's short-key table via
+        a structure backend, not here -- out of this task's scope).
+        """
+        from omnipath_utils.mapping.backends._inputs_v2_adapter import raw_rows
+
+        rows = raw_rows('refmet', 'metabolites', self._effective_limit('refmet'))
+        n = self._emit_long_relations(
+            rows, 'refmet',
+            name_cols={'name': 'refmet_name'},
+            id_cols={
+                # The raw RefMet CSV's first header carries a leading
+                # space (" refmet_id", not "refmet_id") -- verified
+                # against a live fetch, not a typo. Every other column
+                # name is clean.
+                'refmet': ' refmet_id', 'chebi': 'chebi_id',
+                'hmdb': 'hmdb_id', 'kegg': 'kegg_id',
+                'lipidmaps': 'lipidmaps_id', 'pubchem': 'pubchem_cid',
+            },
+        )
+        _log.info('chemical_long refmet: %d rows', n)
 
     def _long_kegg(self):
         """KEGG compound names <-> kegg/chebi. US2 (T025)."""
@@ -2690,6 +2905,16 @@ class DatabaseBuilder:
         'probes&drugs': 'probes_drugs',
     }
 
+    # Namespaces UniChem exposes but whose "source_id" is not that
+    # namespace's own accession (spec 011 T091): UniChem's Rhea entries
+    # return the participant's ChEBI id (Rhea reactions cite ChEBI
+    # compounds directly and mint no compound id of their own), and its
+    # PDBe entries return a display label plus conformer type (e.g. "GR2 -
+    # Ideal conformer") instead of the ligand code. Excluded from
+    # auto-discovery rather than stored wrong; see deferred-items.md for
+    # what a real loader for each would need.
+    _UNICHEM_WRONG_CONTENT = frozenset({'rhea', 'pdbe'})
+
     def _unichem_canonical(self, label: str) -> str | None:
         """Normalise a UniChem source label to a canonical id_type name."""
         import re
@@ -2700,7 +2925,8 @@ class DatabaseBuilder:
         if not raw:
             return None
 
-        return self._UNICHEM_NAME_MAP.get(raw, raw)
+        canonical = self._UNICHEM_NAME_MAP.get(raw, raw)
+        return None if canonical in self._UNICHEM_WRONG_CONTENT else canonical
 
     def _populate_unichem(self):
         """Auto-discover and build all UniChem pairwise mappings."""
@@ -2897,9 +3123,17 @@ class DatabaseBuilder:
         'rhea-comp': 'rhea',
     }
 
-    def _ramp_canonical(self, ramp_type: str) -> str:
-        """Normalise a RaMP IDtype string to a canonical id_type name."""
-        return self._RAMP_NAME_MAP.get(ramp_type, ramp_type.lower())
+    def _ramp_canonical(self, ramp_type: str) -> str | None:
+        """Normalise a RaMP IDtype string to a canonical id_type name.
+
+        ``None`` for a namespace RaMP's own ``rhea-comp`` type does not
+        actually carry (spec 011 T091) -- it is the ChEBI id of the
+        reaction participant, not a Rhea-native compound id, the same
+        wrong-content issue as UniChem's Rhea source
+        (``_UNICHEM_WRONG_CONTENT``).
+        """
+        canonical = self._RAMP_NAME_MAP.get(ramp_type, ramp_type.lower())
+        return None if canonical in self._UNICHEM_WRONG_CONTENT else canonical
 
     def _populate_ramp(self):
         """Auto-discover and build RaMP pairwise mappings."""
@@ -3055,6 +3289,8 @@ class DatabaseBuilder:
         with Session(self.engine) as session:
             for rtype in ramp_types:
                 canonical = self._ramp_canonical(rtype)
+                if canonical is None:
+                    continue
 
                 existing = (
                     session.query(IdType)
@@ -3282,6 +3518,105 @@ class DatabaseBuilder:
                 _log.warning(
                     "BiGG %s -> %s failed: %s", src, tgt, e,
                 )
+
+    def _populate_reactome(self):
+        """ChEBI <-> Reactome stable identifiers, from Reactome's own
+        ChEBI2Reactome cross-reference file (US5, T089).
+
+        Before this, no ``reactome`` id_type existed at all, which is why
+        521 Reactome-only metabolites (a mention citing a bare Reactome
+        stable id as its only identifier) could never resolve to anything
+        else (research.md R7). Each row is one (ChEBI compound, pathway it
+        participates in) pair -- the "pathway_id" field is genuinely the
+        Reactome stable id of that participation, despite the generic
+        field name shared across ``reactome_old``'s four datasets. Human
+        rows only (pathways are organism-scoped; other organisms would
+        just add orthologous-pathway noise for the same compound).
+        """
+        try:
+            from pypath.inputs.reactome_old import reactome_chebis
+        except ImportError:
+            _log.warning('pypath not available for Reactome')
+            return
+
+        with Session(self.engine) as session:
+            chebi_type = session.query(IdType).filter_by(name='chebi').first()
+            reactome_type = (
+                session.query(IdType).filter_by(name='reactome').first()
+            )
+            backend = (
+                session.query(Backend).filter_by(name='reactome').first()
+            )
+            if not chebi_type or not reactome_type or not backend:
+                _log.error(
+                    'Reactome: missing chebi/reactome id_type or backend'
+                )
+                return
+            chebi_type_id = chebi_type.id
+            reactome_type_id = reactome_type.id
+            backend_id = backend.id
+
+        chebi_to_reactome: dict[str, set[str]] = {}
+        reactome_to_chebi: dict[str, set[str]] = {}
+        for row in reactome_chebis():
+            if row.organism != 'Homo sapiens' or not row.chebi_id:
+                continue
+            # id_mapping's own chebi convention is "CHEBI:NNNN" (verified
+            # against direct chebi->inchikey and bigg->chebi rows) -- the
+            # raw reactome_old row's chebi_id is a bare number.
+            chebi_id = f'CHEBI:{row.chebi_id}'
+            chebi_to_reactome.setdefault(chebi_id, set()).add(row.pathway_id)
+            reactome_to_chebi.setdefault(row.pathway_id, set()).add(chebi_id)
+
+        from omnipath_utils.db._connection import get_connection
+
+        limit = self._effective_limit('reactome')
+        total = 0
+        for src_type_id, tgt_type_id, data in (
+            (chebi_type_id, reactome_type_id, chebi_to_reactome),
+            (reactome_type_id, chebi_type_id, reactome_to_chebi),
+        ):
+            if not data:
+                continue
+            with Session(self.engine) as session:
+                session.execute(
+                    text(
+                        f'DELETE FROM {SCHEMA}.id_mapping'
+                        ' WHERE source_type_id = :src'
+                        ' AND target_type_id = :tgt'
+                        ' AND ncbi_tax_id = 0 AND backend_id = :bk'
+                    ),
+                    {'src': src_type_id, 'tgt': tgt_type_id, 'bk': backend_id},
+                )
+                session.commit()
+
+            conn = get_connection(self._db_url)
+            row_count = 0
+            try:
+                with conn.cursor() as cur:
+                    with cur.copy(
+                        f'COPY {SCHEMA}.id_mapping'
+                        ' (source_type_id, target_type_id, ncbi_tax_id,'
+                        ' source_id, target_id, backend_id) FROM STDIN'
+                    ) as copy:
+                        for src_id, tgt_ids in data.items():
+                            for tgt_id in tgt_ids:
+                                copy.write_row((
+                                    src_type_id, tgt_type_id, 0,
+                                    str(src_id)[:64], str(tgt_id)[:64],
+                                    backend_id,
+                                ))
+                                row_count += 1
+                                if limit is not None and row_count >= limit:
+                                    break
+                            if limit is not None and row_count >= limit:
+                                break
+                conn.commit()
+            finally:
+                conn.close()
+            total += row_count
+
+        _log.info('Reactome: %d chebi<->reactome rows', total)
 
     # ------------------------------------------------------------------
     # Structure-bearing namespaces (inputs_v2 adapter backends + PubChem)
