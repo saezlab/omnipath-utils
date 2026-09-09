@@ -67,3 +67,37 @@ def test_c8_a_prefixed_lower_case_structure_key_translates(session):
     prefixed = f'inchikey={inchikey.lower()}'
     res, _ = _translate(session, [prefixed], 'inchikey', 'chebi')
     assert chebi in res.get(prefixed, set())
+
+
+def test_t083_mixed_batch_translates_above_90_percent(session):
+    """Verify: a mixed batch of identifiers known to exist in the source
+    releases (real ids sampled from id_mapping, one per structure backend)
+    translates to inchikey above 90%.
+    """
+    from sqlalchemy import text
+
+    from omnipath_utils.db._build import DatabaseBuilder
+
+    batch: list[tuple[str, str]] = []  # (id_type, source_id)
+    for backend in DatabaseBuilder._STRUCTURE_BACKENDS:
+        row = session.execute(text(
+            "SELECT s.name, m.source_id FROM omnipath_utils.id_mapping m "
+            "JOIN omnipath_utils.id_type s ON s.id=m.source_type_id "
+            "JOIN omnipath_utils.id_type t ON t.id=m.target_type_id "
+            "WHERE t.name='inchikey' AND s.name=:backend LIMIT 5"
+        ), {'backend': backend}).fetchall()
+        batch.extend((r[0], r[1]) for r in row)
+
+    if len(batch) < 10:
+        pytest.skip(f'too few sampled ids ({len(batch)}) for a meaningful check')
+
+    hits = 0
+    for id_type, source_id in batch:
+        res, _ = _translate(session, [source_id], id_type, 'inchikey')
+        if res.get(source_id):
+            hits += 1
+
+    hit_rate = hits / len(batch)
+    assert hit_rate >= 0.90, (
+        f'{hits}/{len(batch)} = {hit_rate:.1%}, below the 90% target'
+    )
