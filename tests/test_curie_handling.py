@@ -64,6 +64,23 @@ class TestLookupKey:
             'inchikey', 'LFQSCWFLJHTTHZ-UHFFFAOYSA-N',
         ) == 'LFQSCWFLJHTTHZ-UHFFFAOYSA-N'
 
+    def test_smiles_canonicalized_when_chemistry_available(self, monkeypatch):
+        # C7: two equivalent SMILES spellings must produce the same key.
+        from omnipath_utils.mapping import _chemistry
+
+        monkeypatch.setattr(_chemistry, 'chemistry_available', lambda: True)
+        monkeypatch.setattr(
+            _chemistry, 'canonicalize_smiles', lambda s: 'CANONICAL',
+        )
+        assert q._lookup_key('smiles', 'OCC') == 'CANONICAL'
+        assert q._lookup_key('smiles', 'CCO') == 'CANONICAL'
+
+    def test_smiles_falls_back_to_verbatim_without_chemistry(self, monkeypatch):
+        from omnipath_utils.mapping import _chemistry
+
+        monkeypatch.setattr(_chemistry, 'chemistry_available', lambda: False)
+        assert q._lookup_key('smiles', '  CCO  ') == 'CCO'
+
 
 class TestTranslateCurie:
     def test_chebi_curie_variants_resolve_and_rekey(self, monkeypatch):

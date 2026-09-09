@@ -133,6 +133,22 @@ def _lookup_key(source_type: str, identifier: str) -> str:
 
         normalized = normalize_identifier('inchikey', identifier)
         return normalized if normalized else str(identifier).strip().upper()
+    if source_type == 'smiles':
+        # C7: two equivalent SMILES spellings must match one stored key.
+        # Degrades to a verbatim (byte) comparison without the chemistry
+        # toolkit -- identifier-to-identifier translation stays unaffected
+        # (research R14), only cross-spelling SMILES matching is lost.
+        from omnipath_utils.mapping._chemistry import (
+            canonicalize_smiles,
+            chemistry_available,
+        )
+
+        raw = str(identifier).strip()
+        if chemistry_available():
+            canonical = canonicalize_smiles(raw)
+            if canonical:
+                return canonical
+        return raw
     if source_type in STRUCTURE_TYPES:
         return str(identifier).strip()
     s = strip_curie(source_type, identifier)
