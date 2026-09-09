@@ -15,6 +15,7 @@ from omnipath_utils.db._query import (
     get_all_mappings,
     uniprot_organism,
 )
+from omnipath_utils.mapping._chemistry import chemistry_available
 
 _log = logging.getLogger(__name__)
 
@@ -199,6 +200,31 @@ def _rank_name_matches(
     return {k: mapped[k] for k in ranked_keys}
 
 
+def _needs_chemistry_toolkit(id_type: str, target_id_type: str) -> bool:
+    """Whether this (id_type, target_id_type) pair depends on the live
+    chemistry toolkit (spec 011 R14) -- SMILES canonicalization on either
+    side (C7), or the InChI/SMILES -> InChIKey live-compute fallback (C6).
+    A plain InChIKey<->id lookup is stored-data only and does not depend
+    on it (research: "identifier-to-identifier translation is
+    unaffected").
+    """
+
+    return 'smiles' in (id_type, target_id_type) or (
+        id_type in ('inchi', 'smiles') and target_id_type == 'inchikey'
+    )
+
+
+def _structure_key_capability_meta() -> dict:
+    available = chemistry_available()
+    return {
+        'available': available,
+        'reason': None if available else (
+            'the chemistry toolkit (omnipath-utils[chem]) is not '
+            'installed in this server process'
+        ),
+    }
+
+
 def _build_translate_response(
     id_list: list[str],
     result: dict[str, set[str]],
@@ -212,6 +238,7 @@ def _build_translate_response(
     recovery: dict | None = None,
     name_scope: str | None = None,
     matched_as: dict | None = None,
+    structure_capability: dict | None = None,
 ) -> dict:
     """Build the response dict for translate endpoints."""
 
@@ -236,6 +263,9 @@ def _build_translate_response(
         meta['matched_as'] = {
             k: v for k, v in (matched_as or {}).items() if k in mapped
         }
+
+    if structure_capability is not None:
+        meta['structure_key_computation'] = structure_capability
 
     if loading:
         meta['loading_note'] = (
@@ -356,6 +386,9 @@ class MappingController(Controller):
         id_type_resolved = reg.resolve(id_type) or id_type
         target_resolved = reg.resolve(target_id_type) or target_id_type
         is_name_axis = 'name' in (id_type_resolved, target_resolved)
+        is_structure_query = _needs_chemistry_toolkit(
+            id_type_resolved, target_resolved,
+        )
 
         id_list = [i.strip() for i in identifiers.split(',') if i.strip()]
 
@@ -417,6 +450,9 @@ class MappingController(Controller):
             recovery=recovery,
             name_scope=name_scope if is_name_axis else None,
             matched_as=matched_as if is_name_axis else None,
+            structure_capability=(
+                _structure_key_capability_meta() if is_structure_query else None
+            ),
         )
 
     @post('/translate')
@@ -456,6 +492,9 @@ class MappingController(Controller):
         id_type_resolved = reg.resolve(id_type) or id_type
         target_resolved = reg.resolve(target_id_type) or target_id_type
         is_name_axis = 'name' in (id_type_resolved, target_resolved)
+        is_structure_query = _needs_chemistry_toolkit(
+            id_type_resolved, target_resolved,
+        )
 
         recovery: dict = {}
         matched_as: dict = {}
@@ -510,6 +549,9 @@ class MappingController(Controller):
             recovery=recovery,
             name_scope=name_scope if is_name_axis else None,
             matched_as=matched_as if is_name_axis else None,
+            structure_capability=(
+                _structure_key_capability_meta() if is_structure_query else None
+            ),
         )
 
     @get('/identify')
