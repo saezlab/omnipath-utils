@@ -84,6 +84,14 @@ class TestGuards:
         assert {r[5] for r in rows} == {'CHEBI:17234', 'CHEBI:4167'}
 
 
+class TestStructureBackends:
+    def test_hmdb_is_a_structure_backend(self):
+        # spec 011 T081: hmdb has its own precomputed inchikey column
+        # (id_types.yaml's inchikey: backends), same shape as the other
+        # five structure backends -- it was simply missing from this list.
+        assert 'hmdb' in DatabaseBuilder._STRUCTURE_BACKENDS
+
+
 @pytest.mark.skipif(
     not os.environ.get('OMNIPATH_UTILS_TEST_DB'),
     reason='set OMNIPATH_UTILS_TEST_DB to run the DB-backed idempotency check',

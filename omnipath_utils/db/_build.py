@@ -3259,6 +3259,10 @@ class DatabaseBuilder:
         "lipidmaps",
         "swisslipids",
         "pubchem",
+        # T081: hmdb has its own precomputed inchikey column
+        # (id_types.yaml's inchikey: backends), same shape as the five
+        # above -- it was simply missing from this list.
+        "hmdb",
     ]
 
     def _populate_structures(self):

@@ -608,6 +608,22 @@ def translate_ids(
             session, f'{SCHEMA}.{_LONG_TABLE}',
             norm_ids, source_type, target_type, 0,
         )
+        # C6: an InChI/SMILES with no stored match still translates to its
+        # structure key -- computed live rather than requiring it to
+        # already be one of our own stored source values. Only whatever
+        # the stored lookup missed; a no-op without the chemistry toolkit
+        # (compute_inchikey degrades to None itself, research R14).
+        if target_type == 'inchikey' and source_type in STRUCTURE_TYPES:
+            missing = [i for i in (norm_ids or []) if i not in result]
+            if missing:
+                from omnipath_utils.mapping._chemistry import compute_inchikey
+
+                kwarg = 'inchi' if source_type == 'inchi' else 'smiles'
+                for ident in missing:
+                    key = compute_inchikey(**{kwarg: ident})
+                    if key:
+                        result[ident] = {key}
+                        backends_used = backends_used | {'chemistry_toolkit'}
         return _rekey(result, identifiers, source_type), backends_used
 
     if full_uniprot == 'only':
