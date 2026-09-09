@@ -2116,6 +2116,7 @@ class DatabaseBuilder:
         self._populate_bigg()
         self._populate_structures()
         self._populate_chemical_long()
+        self.record_structure_key_capability()
 
     # ------------------------------------------------------------------
     # Long-value chemical mappings: names + structures (id_mapping_long)
@@ -2639,6 +2640,44 @@ class DatabaseBuilder:
                 )
             session.commit()
         _log.info('record_ftp_types: cached %d FTP id_types', len(names))
+
+    def record_structure_key_capability(self):
+        """Record whether this build ran with the chemistry toolkit
+        (spec 011 T082/R14) into ``build_info``
+        (``table_name = 'capability'``). Read by omnipath-build's own
+        ``build_capability`` detection (a query across databases -- this
+        build's own capability, recorded once, is the real signal that
+        finally replaces its previous hardcoded 'unavailable').
+
+        Idempotent: replaces any prior row.
+        """
+        from omnipath_utils.mapping._chemistry import chemistry_available
+
+        available = chemistry_available()
+        with Session(self.engine) as session:
+            session.execute(
+                text(
+                    f"DELETE FROM {SCHEMA}.build_info"
+                    " WHERE table_name='capability'"
+                    " AND source_type='structure_key_computation'"
+                )
+            )
+            session.add(
+                BuildInfo(
+                    table_name='capability',
+                    source_type='structure_key_computation',
+                    target_type=None,
+                    ncbi_tax_id=0,
+                    backend='chemistry',
+                    row_count=None,
+                    status='available' if available else 'unavailable',
+                )
+            )
+            session.commit()
+        _log.info(
+            'structure_key_computation capability: %s',
+            'available' if available else 'unavailable',
+        )
 
     # ------------------------------------------------------------------
     # UniChem auto-discovery
