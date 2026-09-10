@@ -183,6 +183,39 @@ class Reflist(Base):
     list_name: Mapped[str] = mapped_column(String(32), nullable=False)
 
 
+class LipidName(Base):
+    """Raw lipid-shorthand name -> standardized identity fields (spec 011
+    WP7 T113), one row per distinct raw name seen across any name-axis
+    ``id_mapping_long`` source type (name/synonym/iupac/traditional_iupac).
+
+    A name-to-name table, not an identity table itself -- ``lipid_name`` is
+    the Goslin-canonical rendering (the key `lipid_name_node` in the MAIN
+    build reads and keys entities on, per data-model.md section 7);
+    ``raw_name`` is what a resource actually wrote, verbatim. Many raw names
+    (format variants: ``PC(16:0/18:1)`` vs ``PC 16:0/18:1``) map to one
+    ``lipid_name`` -- that convergence is the point (research R9 acceptance
+    scenario 2).
+    """
+
+    __tablename__ = 'lipid_name'
+    __table_args__ = (
+        Index('idx_lipid_name_canonical', 'lipid_name', 'lipid_level'),
+        {'schema': 'omnipath_utils'},
+    )
+
+    raw_name: Mapped[str] = mapped_column(Text, primary_key=True)
+    lipid_name: Mapped[str] = mapped_column(Text, nullable=False)
+    lipid_level: Mapped[str] = mapped_column(String(32), nullable=False)
+    chains_possible: Mapped[int | None] = mapped_column(SmallInteger)
+    chains_listed: Mapped[int | None] = mapped_column(SmallInteger)
+    lipid_category: Mapped[str | None] = mapped_column(String(64))
+    lipid_class: Mapped[str | None] = mapped_column(String(64))
+    total_carbon: Mapped[int | None] = mapped_column(SmallInteger)
+    total_db: Mapped[int | None] = mapped_column(SmallInteger)
+    sum_formula: Mapped[str | None] = mapped_column(Text)
+    parser_version: Mapped[str | None] = mapped_column(String(32))
+
+
 class BuildInfo(Base):
     __tablename__ = 'build_info'
     __table_args__ = {'schema': 'omnipath_utils'}

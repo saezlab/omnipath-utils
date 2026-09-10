@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from omnipath_utils.db._schema import (
-    Base, IdType, Backend, Organism, BuildInfo, NamespaceExemption,
+    Base, IdType, Backend, Organism, BuildInfo, NamespaceExemption, LipidName,
 )
 from omnipath_utils.db._connection import SCHEMA, get_engine, ensure_schema
 from omnipath_utils.mapping._id_types import IdTypeRegistry, normalize_identifier
@@ -2287,8 +2287,10 @@ class DatabaseBuilder:
         self._clear_wrong_content_rows()
         self._populate_structures()
         self._populate_chemical_long()
+        self._populate_lipid_names()
         self.populate_namespace_exemptions()
         self.record_structure_key_capability()
+        self.record_lipid_nomenclature_capability()
 
     # ------------------------------------------------------------------
     # Long-value chemical mappings: names + structures (id_mapping_long)
@@ -2855,6 +2857,123 @@ class DatabaseBuilder:
                 )
             session.commit()
         _log.info('record_ftp_types: cached %d FTP id_types', len(names))
+
+    #: Name-axis id_type names whose values may carry a lipid shorthand.
+    _LIPID_NAME_SOURCE_TYPES = ('name', 'synonym', 'iupac', 'traditional_iupac')
+
+    def _populate_lipid_names(self):
+        """Build ``lipid_name`` (spec 011 T113): every distinct name-axis
+        value that looks lipid-shaped (has a ``C:D`` chain token), parsed by
+        the nomenclature grammar into its standardized identity fields.
+
+        Parallel across cores -- pygoslin parsing is pure-Python and
+        CPU-bound (unlike rdkit's C extension, it does not release the GIL),
+        so threads would not help; a process pool does, mirroring
+        omnipath-metabo's ``_lipid_layer.py._parse_many`` (the same
+        candidate-selection + parallel-parse shape, independently applied
+        here because this is a different database with its own name
+        corpus). Idempotent: replaces the whole table each run.
+        """
+        from omnipath_utils.mapping._lipid import (
+            lipid_nomenclature_available,
+            parse_lipid_name,
+        )
+
+        if not lipid_nomenclature_available():
+            _log.info('lipid_name: pygoslin unavailable, skipping (T114)')
+            return 0
+
+        with self.engine.connect() as conn:
+            names = [
+                row[0]
+                for row in conn.execute(
+                    text(
+                        f"""
+                        SELECT DISTINCT coalesce(m.source_label, m.source_id)
+                        FROM {SCHEMA}.id_mapping_long m
+                        JOIN {SCHEMA}.id_type t ON t.id = m.source_type_id
+                        WHERE t.name = ANY(:types)
+                          AND coalesce(m.source_label, m.source_id) ~ '\\d+:\\d+'
+                        """
+                    ),
+                    {'types': list(self._LIPID_NAME_SOURCE_TYPES)},
+                )
+            ]
+
+        _log.info('lipid_name: %d candidate names to parse', len(names))
+        if not names:
+            return 0
+
+        workers = min(16, max(1, (os.cpu_count() or 2) - 2))
+        if workers > 1 and len(names) >= 2000:
+            from multiprocessing import Pool
+
+            with Pool(processes=workers) as pool:
+                parsed = list(pool.imap(parse_lipid_name, names, chunksize=1000))
+        else:
+            parsed = [parse_lipid_name(n) for n in names]
+
+        rows = [
+            {
+                'raw_name': raw,
+                'lipid_name': p['lipid_name'],
+                'lipid_level': p['lipid_level'],
+                'chains_possible': p['chains_possible'],
+                'chains_listed': p['chains_listed'],
+                'lipid_category': p['lipid_category'],
+                'lipid_class': p['lipid_class'],
+                'total_carbon': p['total_carbon'],
+                'total_db': p['total_db'],
+                'sum_formula': p['sum_formula'],
+                'parser_version': p['parser_version'],
+            }
+            for raw, p in zip(names, parsed)
+            if p is not None
+        ]
+        _log.info(
+            'lipid_name: %d/%d names parsed successfully', len(rows), len(names)
+        )
+
+        with Session(self.engine) as session:
+            session.execute(text(f'TRUNCATE {SCHEMA}.lipid_name'))
+            if rows:
+                session.execute(LipidName.__table__.insert(), rows)
+            session.commit()
+        return len(rows)
+
+    def record_lipid_nomenclature_capability(self):
+        """Record whether this build ran with the lipid nomenclature grammar
+        (spec 011 T114) into ``build_info`` -- mirrors
+        :meth:`record_structure_key_capability` exactly, one row,
+        ``table_name='capability'``, a different ``source_type``.
+        """
+        from omnipath_utils.mapping._lipid import lipid_nomenclature_available
+
+        available = lipid_nomenclature_available()
+        with Session(self.engine) as session:
+            session.execute(
+                text(
+                    f"DELETE FROM {SCHEMA}.build_info"
+                    " WHERE table_name='capability'"
+                    " AND source_type='lipid_nomenclature'"
+                )
+            )
+            session.add(
+                BuildInfo(
+                    table_name='capability',
+                    source_type='lipid_nomenclature',
+                    target_type=None,
+                    ncbi_tax_id=0,
+                    backend='pygoslin',
+                    row_count=None,
+                    status='available' if available else 'unavailable',
+                )
+            )
+            session.commit()
+        _log.info(
+            'lipid_nomenclature capability: %s',
+            'available' if available else 'unavailable',
+        )
 
     def record_structure_key_capability(self):
         """Record whether this build ran with the chemistry toolkit

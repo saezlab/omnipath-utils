@@ -64,6 +64,9 @@ pypath = [
 chem = [
     "rdkit>=2023.9",
 ]
+lipid = [
+    "pygoslin>=2.2",
+]
 dev = [
     "pre-commit",
     "bump2version",
